@@ -52,7 +52,7 @@ function runRollupTask(entry, filename) {
                     return write('dist/' + filename + '.js', bundle.generate({
                         format: 'umd',
                         banner: banner,
-                        moduleName: 'React'
+                        moduleName: 'Vengine'
                     }).code)
                 })
         })
@@ -72,7 +72,7 @@ function runRollupTask(entry, filename) {
                 .then(function(bundle) {
                     var code = bundle.generate({
                         format: 'umd',
-                        moduleName: 'React'
+                        moduleName: 'Vengine'
                     }).code
                     var minified = banner + '\n' + uglify.minify(code, {
                         fromString: true
