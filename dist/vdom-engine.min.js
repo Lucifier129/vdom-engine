@@ -1,5 +1,5 @@
 /*!
- * vdom-engine.js v0.1.0
+ * vdom-engine.js v0.1.1
  * (c) 2016 Jade Gu
  * Released under the MIT License.
  */
