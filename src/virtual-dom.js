@@ -58,7 +58,10 @@ function initVelem(velem, namespaceURI) {
     let vchildren = props.children
 
     for (let i = 0, len = vchildren.length; i < len; i++) {
-        node.appendChild(initVnode(vchildren[i], namespaceURI))
+        let vchild = vchildren[i]
+        let childNode = initVnode(vchildren[i], namespaceURI)
+        childNode.vnode = vchild
+        node.appendChild(childNode)
     }
 
     _.attachProps(node, props)
@@ -91,10 +94,7 @@ function updateVelem(velem, newVelem, node) {
                 }
                 let newVnode = newVchildren[j]
                 if (vnode === newVnode) {
-                    patches[j] = {
-                        vnode: vnode,
-                        node: childNodes[i]
-                    }
+                    patches[j] = childNodes[i]
                     matches[i] = true
                     break
                 }
@@ -116,10 +116,7 @@ function updateVelem(velem, newVelem, node) {
                 }
                 let newVnode = newVchildren[j]
                 if (newVnode.type === type && newVnode.key === key) {
-                    patches[j] = {
-                        vnode: vnode,
-                        node: childNode
-                    }
+                    patches[j] = childNode
                     continue outer
                 }
             }
@@ -139,10 +136,12 @@ function updateVelem(velem, newVelem, node) {
         
         for (let i = 0; i < newVchildrenLen; i++) {
             let newVnode = newVchildren[i]
-            let patchItem = patches[i]
-            if (patchItem) {
-                let vnode = patchItem.vnode
-                let newChildNode = patchItem.node
+            let patchNode = patches[i]
+            let newChildNode = null
+            if (patchNode) {
+                let vnode = patchNode.vnode
+                newChildNode = patchNode
+                patchNode.vnode = null
                 if (newVnode !== vnode) {
                     let vtype = newVnode.vtype
                     if (!vtype) { // textNode
@@ -162,6 +161,7 @@ function updateVelem(velem, newVelem, node) {
                 let newChildNode = initVnode(newVnode, namespaceURI)
                 node.insertBefore(newChildNode, childNodes[i] || null)
             }
+            newChildNode.vnode = newVnode
         }
         node.props = props
         node.newProps = newProps
@@ -170,7 +170,10 @@ function updateVelem(velem, newVelem, node) {
         // should patch props first, make sure innerHTML was cleared 
         _.patchProps(node, props, newProps)
         for (let i = 0; i < newVchildrenLen; i++) {
-            node.appendChild(initVnode(newVchildren[i], namespaceURI))
+            let newVnode = newVchildren[i]
+            let newChildNode = initVnode(newVnode, namespaceURI)
+            newChildNode.vnode = newVnode
+            node.appendChild(newChildNode)
         }
     }
 

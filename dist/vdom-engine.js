@@ -1,5 +1,5 @@
 /*!
- * vdom-engine.js v0.1.1
+ * vdom-engine.js v0.1.2
  * (c) 2016 Jade Gu
  * Released under the MIT License.
  */
@@ -559,7 +559,10 @@
       var vchildren = props.children;
 
       for (var i = 0, len = vchildren.length; i < len; i++) {
-          node.appendChild(initVnode(vchildren[i], namespaceURI));
+          var vchild = vchildren[i];
+          var childNode = initVnode(vchildren[i], namespaceURI);
+          childNode.vnode = vchild;
+          node.appendChild(childNode);
       }
 
       attachProps(node, props);
@@ -595,10 +598,7 @@
                   }
                   var newVnode = newVchildren[j];
                   if (vnode === newVnode) {
-                      patches[j] = {
-                          vnode: vnode,
-                          node: childNodes[i]
-                      };
+                      patches[j] = childNodes[i];
                       matches[i] = true;
                       break;
                   }
@@ -621,10 +621,7 @@
                   }
                   var newVnode = newVchildren[j];
                   if (newVnode.type === _type && newVnode.key === key) {
-                      patches[j] = {
-                          vnode: vnode,
-                          node: childNode
-                      };
+                      patches[j] = childNode;
                       continue outer;
                   }
               }
@@ -644,10 +641,12 @@
 
           for (var i = 0; i < newVchildrenLen; i++) {
               var newVnode = newVchildren[i];
-              var patchItem = patches[i];
-              if (patchItem) {
-                  var vnode = patchItem.vnode;
-                  var newChildNode = patchItem.node;
+              var patchNode = patches[i];
+              var newChildNode = null;
+              if (patchNode) {
+                  var vnode = patchNode.vnode;
+                  newChildNode = patchNode;
+                  patchNode.vnode = null;
                   if (newVnode !== vnode) {
                       var vtype = newVnode.vtype;
                       if (!vtype) {
@@ -665,9 +664,10 @@
                       node.insertBefore(newChildNode, currentNode || null);
                   }
               } else {
-                  var newChildNode = initVnode(newVnode, namespaceURI);
-                  node.insertBefore(newChildNode, childNodes[i] || null);
+                  var _newChildNode = initVnode(newVnode, namespaceURI);
+                  node.insertBefore(_newChildNode, childNodes[i] || null);
               }
+              newChildNode.vnode = newVnode;
           }
           node.props = props;
           node.newProps = newProps;
@@ -676,7 +676,10 @@
           // should patch props first, make sure innerHTML was cleared
           patchProps(node, props, newProps);
           for (var i = 0; i < newVchildrenLen; i++) {
-              node.appendChild(initVnode(newVchildren[i], namespaceURI));
+              var newVnode = newVchildren[i];
+              var newChildNode = initVnode(newVnode, namespaceURI);
+              newChildNode.vnode = newVnode;
+              node.appendChild(newChildNode);
           }
       }
 
