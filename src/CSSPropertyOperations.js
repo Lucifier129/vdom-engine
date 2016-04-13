@@ -11,17 +11,13 @@ export let styleDirective = {
 
 function attachStyle(elemStyle, styles) {
     for (let styleName in styles) {
-        if (styles.hasOwnProperty(styleName)) {
-            setStyleValue(elemStyle, styleName, styles[styleName])
-        }
+        setStyleValue(elemStyle, styleName, styles[styleName])
     }
 }
 
 function detachStyle(elemStyle, styles) {
     for (let styleName in styles) {
-        if (styles.hasOwnProperty(styleName)) {
-            elemStyle[styleName] = ''
-        }
+        elemStyle[styleName] = ''
     }
 }
 
@@ -39,21 +35,20 @@ function patchStyle(elemStyle, style, newStyle) {
 
     let keyMap = {}
     for (let key in style) {
-        if (style.hasOwnProperty(key)) {
-            keyMap[key] = true
-            if (style[key] !== newStyle[key]) {
-                setStyleValue(elemStyle, key, newStyle[key])
-            }
+        keyMap[key] = true
+        if (style[key] !== newStyle[key]) {
+            setStyleValue(elemStyle, key, newStyle[key])
         }
     }
     for (let key in newStyle) {
-        if (newStyle.hasOwnProperty(key) && keyMap[key] !== true) {
+        if (keyMap[key] !== true) {
             if (style[key] !== newStyle[key]) {
                 setStyleValue(elemStyle, key, newStyle[key])
             }
         }
     }
 }
+
 
 /**
  * CSS properties which accept numbers but are not in units of "px".

@@ -162,17 +162,13 @@ var styleDirective = {
 
 function attachStyle(elemStyle, styles) {
     for (var styleName in styles) {
-        if (styles.hasOwnProperty(styleName)) {
-            setStyleValue(elemStyle, styleName, styles[styleName]);
-        }
+        setStyleValue(elemStyle, styleName, styles[styleName]);
     }
 }
 
 function detachStyle(elemStyle, styles) {
     for (var styleName in styles) {
-        if (styles.hasOwnProperty(styleName)) {
-            elemStyle[styleName] = '';
-        }
+        elemStyle[styleName] = '';
     }
 }
 
@@ -190,15 +186,13 @@ function patchStyle(elemStyle, style, newStyle) {
 
     var keyMap = {};
     for (var key in style) {
-        if (style.hasOwnProperty(key)) {
-            keyMap[key] = true;
-            if (style[key] !== newStyle[key]) {
-                setStyleValue(elemStyle, key, newStyle[key]);
-            }
+        keyMap[key] = true;
+        if (style[key] !== newStyle[key]) {
+            setStyleValue(elemStyle, key, newStyle[key]);
         }
     }
     for (var key in newStyle) {
-        if (newStyle.hasOwnProperty(key) && keyMap[key] !== true) {
+        if (keyMap[key] !== true) {
             if (style[key] !== newStyle[key]) {
                 setStyleValue(elemStyle, key, newStyle[key]);
             }
@@ -472,9 +466,7 @@ function getUid() {
 
 function attachProps(elem, props) {
     for (var propKey in props) {
-        if (props.hasOwnProperty(propKey)) {
-            attachProp(elem, propKey, props[propKey], props);
-        }
+        attachProp(elem, propKey, props[propKey], props);
     }
 }
 
@@ -482,16 +474,14 @@ function patchProps(elem, props, newProps) {
     var keyMap = {};
     var directive = null;
     for (var propKey in props) {
-        if (props.hasOwnProperty(propKey)) {
-            keyMap[propKey] = true;
-            directive = matchDirective(propKey);
-            if (directive) {
-                directive.patch(elem, propKey, newProps[propKey], props[propKey], newProps, props);
-            }
+        keyMap[propKey] = true;
+        directive = matchDirective(propKey);
+        if (directive) {
+            directive.patch(elem, propKey, newProps[propKey], props[propKey], newProps, props);
         }
     }
     for (var propKey in newProps) {
-        if (newProps.hasOwnProperty(propKey) && keyMap[propKey] !== true) {
+        if (keyMap[propKey] !== true) {
             directive = matchDirective(propKey);
             if (directive) {
                 directive.patch(elem, propKey, newProps[propKey], props[propKey], newProps, props);
@@ -909,8 +899,8 @@ function createElement(type, props) /* ...children */{
 		var child = arguments[i];
 		if (isArr(child)) {
 			flattenMerge(child, finalChildren);
-		} else {
-			finalChildren[finalChildren.length] = child;
+		} else if (child != null && typeof child !== 'boolean') {
+			finalChildren[finalChildren.length] = child.vtype ? child : '' + child;
 		}
 	}
 

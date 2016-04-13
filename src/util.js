@@ -52,13 +52,9 @@ export function getUid() {
     return ++uid
 }
 
-
-
 export function attachProps(elem, props) {
     for (let propKey in props) {
-        if (props.hasOwnProperty(propKey)){
-            attachProp(elem, propKey, props[propKey], props)
-        }
+        attachProp(elem, propKey, props[propKey], props)
     }
 }
 
@@ -66,16 +62,14 @@ export function patchProps(elem, props, newProps) {
     let keyMap = {}
     let directive = null
     for (let propKey in props) {
-        if (props.hasOwnProperty(propKey)) {
-            keyMap[propKey] = true
-            directive = matchDirective(propKey)
-            if (directive) {
-                directive.patch(elem, propKey, newProps[propKey], props[propKey], newProps, props)
-            }
+        keyMap[propKey] = true
+        directive = matchDirective(propKey)
+        if (directive) {
+            directive.patch(elem, propKey, newProps[propKey], props[propKey], newProps, props)
         }
     }
     for (let propKey in newProps) {
-        if (newProps.hasOwnProperty(propKey) && keyMap[propKey] !== true) {
+        if (keyMap[propKey] !== true) {
             directive = matchDirective(propKey)
             if (directive) {
                 directive.patch(elem, propKey, newProps[propKey], props[propKey], newProps, props)
@@ -83,6 +77,7 @@ export function patchProps(elem, props, newProps) {
         }
     }
 }
+
 
 function attachProp(elem, propKey, propValue, props) {
     if (propValue == null) {
