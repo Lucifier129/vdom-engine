@@ -19,19 +19,20 @@ export function pipe(fn1, fn2) {
     }
 }
 
-export function flattenChildren(list, iteratee, a) {
-    let len = list.length
+export function flattenMerge(sourceList, targetList) {
+    let len = sourceList.length
     let i = -1
 
     while (len--) {
-        let item = list[++i]
+        let item = sourceList[++i]
         if (isArr(item)) {
-            flattenChildren(item, iteratee, a)
-        } else {
-            iteratee(item, a)
+            flattenChildren(item, targetList)
+        } else if (item != null && typeof item !== 'boolean') {
+            targetList[targetList.length] = item.vtype ? item : '' + item
         }
     }
 }
+
 
 export function extend(to, from) {
     if (!from) {

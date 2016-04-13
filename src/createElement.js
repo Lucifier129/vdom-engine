@@ -1,7 +1,7 @@
 import { VELEMENT, VCOMPONENT } from './constant'
 import * as _ from './util'
 
-export function createElement(type, props, children) {
+export function createElement(type, props, /* ...children */) {
 	let finalProps = {}
 	if (props != null) {
 		for (let propKey in props) {
@@ -19,17 +19,18 @@ export function createElement(type, props, children) {
 	}
 
 	let argsLen = arguments.length
-	let finalChildren = children
-	if (argsLen > 3) {
-		finalChildren = Array(argsLen - 2)
-		for (let i = 2; i < argsLen; i++) {
-			finalChildren[i - 2] = arguments[i]
-		}
+	let finalChildren = []
+
+	for (let i = 2; i < argsLen; i++) {
+	    let child = arguments[i]
+	    if (_.isArr(child)) {
+	        _.flattenMerge(child, finalChildren)
+	    } else {
+	        finalChildren[finalChildren.length] = child
+	    }
 	}
 
-	if (finalChildren !== undefined) {
-		finalProps.children = finalChildren
-	}
+	finalProps.children = finalChildren
 
 	let vnode = null
 	let varType = typeof type

@@ -55,14 +55,7 @@ function initVelem(velem, namespaceURI) {
         node = document.createElement(type)
     }
 
-    let { children } = props
-    let vchildren = node.vchildren = []
-
-    if (_.isArr(children)) {
-        _.flattenChildren(children, collectChild, vchildren)
-    } else {
-        collectChild(children, vchildren)
-    }
+    let vchildren = props.children
 
     for (let i = 0, len = vchildren.length; i < len; i++) {
         node.appendChild(initVnode(vchildren[i], namespaceURI))
@@ -73,27 +66,15 @@ function initVelem(velem, namespaceURI) {
     return node
 }
 
-function collectChild(child, children) {
-    if (child != null && typeof child !== 'boolean') {
-        children[children.length] = child.vtype ? child : '' + child
-    }
-}
-
 function updateVelem(velem, newVelem, node) {
     let { props, type } = velem
     let newProps = newVelem.props
     let oldHtml = props['prop-innerHTML']
-    let newChildren = newProps.children
-    let { vchildren, childNodes, namespaceURI } = node
+    let { childNodes, namespaceURI } = node
+
+    let vchildren = props.children
+    let newVchildren = newProps.children
     let vchildrenLen = vchildren.length
-    let newVchildren = node.vchildren = []
-
-    if (_.isArr(newChildren)) {
-        _.flattenChildren(newChildren, collectChild, newVchildren)
-    } else {
-        collectChild(newChildren, newVchildren)
-    }
-
     let newVchildrenLen = newVchildren.length
 
     if (oldHtml == null && vchildrenLen) {
@@ -196,13 +177,14 @@ function updateVelem(velem, newVelem, node) {
 
 function destroyVelem(velem, node) {
     let { props } = velem
-    let { vchildren, childNodes } = node
+    let vchildren = props.children
+    let childNodes = node.childNodes
 
     for (let i = 0, len = vchildren.length; i < len; i++) {
         destroyVnode(vchildren[i], childNodes[i])
     }
 
-    node.eventStore = node.vchildren = null
+    node.eventStore = null
     for (let key in props) {
         if (EVENT_RE.test(key)) {
             key = getEventName(key)
@@ -254,38 +236,33 @@ function renderVcomponent(vcomponent) {
     return vnode
 }
 
-export function batchUpdateDOM() {
-    clearPendingPropsUpdater()
-    clearPendingTextUpdater()
-}
-
 let pendingTextUpdater = []
-let clearPendingTextUpdater = () => {
+export let clearPendingTextUpdater = () => {
     let len = pendingTextUpdater.length
     if (!len) {
         return
     }
     let list = pendingTextUpdater
-    pendingTextUpdater = []
     for (let i = 0; i < len; i++) {
         let node = list[i]
         node.nodeValue = node.newText
     }
+    pendingTextUpdater.length = 0
 }
 
 let pendingPropsUpdater = []
-let clearPendingPropsUpdater = () => {
+export let clearPendingPropsUpdater = () => {
     let len = pendingPropsUpdater.length
     if (!len) {
         return
     }
     let list = pendingPropsUpdater
-    pendingPropsUpdater = []
     for (let i = 0; i < len; i++) {
         let node = list[i]
         _.patchProps(node, node.props, node.newProps)
         node.props = node.newProps = null
     }
+    pendingPropsUpdater.length = 0
 }
 
 export function compareTwoVnodes(vnode, newVnode, node) {

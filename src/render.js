@@ -1,6 +1,13 @@
 import * as _ from './util'
 import { COMPONENT_ID } from './constant'
-import { initVnode, destroyVnode, compareTwoVnodes, batchUpdateDOM } from './virtual-dom'
+import {
+	initVnode,
+	destroyVnode,
+	compareTwoVnodes,
+	batchUpdateDOM,
+	clearPendingTextUpdater,
+	clearPendingPropsUpdater
+} from './virtual-dom'
 
 let pendingRendering = {}
 let vnodeStore = {}
@@ -40,7 +47,8 @@ export function render(vnode, container, callback) {
 	}
 	vnodeStore[id] = vnode
 
-	batchUpdateDOM()
+    clearPendingTextUpdater()
+    clearPendingPropsUpdater()
 
 	argsCache = pendingRendering[id]
 	delete pendingRendering[id]

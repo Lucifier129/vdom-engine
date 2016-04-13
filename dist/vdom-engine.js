@@ -442,16 +442,16 @@
       };
   }
 
-  function flattenChildren(list, iteratee, a) {
-      var len = list.length;
+  function flattenMerge(sourceList, targetList) {
+      var len = sourceList.length;
       var i = -1;
 
       while (len--) {
-          var item = list[++i];
+          var item = sourceList[++i];
           if (isArr(item)) {
-              flattenChildren(item, iteratee, a);
-          } else {
-              iteratee(item, a);
+              flattenChildren(item, targetList);
+          } else if (item != null && typeof item !== 'boolean') {
+              targetList[targetList.length] = item.vtype ? item : '' + item;
           }
       }
   }
@@ -577,15 +577,7 @@
           node = document.createElement(type);
       }
 
-      var children = props.children;
-
-      var vchildren = node.vchildren = [];
-
-      if (isArr(children)) {
-          flattenChildren(children, collectChild, vchildren);
-      } else {
-          collectChild(children, vchildren);
-      }
+      var vchildren = props.children;
 
       for (var i = 0, len = vchildren.length; i < len; i++) {
           node.appendChild(initVnode(vchildren[i], namespaceURI));
@@ -596,32 +588,18 @@
       return node;
   }
 
-  function collectChild(child, children) {
-      if (child != null && typeof child !== 'boolean') {
-          children[children.length] = child.vtype ? child : '' + child;
-      }
-  }
-
   function updateVelem(velem, newVelem, node) {
       var props = velem.props;
       var type = velem.type;
 
       var newProps = newVelem.props;
       var oldHtml = props['prop-innerHTML'];
-      var newChildren = newProps.children;
-      var vchildren = node.vchildren;
       var childNodes = node.childNodes;
       var namespaceURI = node.namespaceURI;
 
+      var vchildren = props.children;
+      var newVchildren = newProps.children;
       var vchildrenLen = vchildren.length;
-      var newVchildren = node.vchildren = [];
-
-      if (isArr(newChildren)) {
-          flattenChildren(newChildren, collectChild, newVchildren);
-      } else {
-          collectChild(newChildren, newVchildren);
-      }
-
       var newVchildrenLen = newVchildren.length;
 
       if (oldHtml == null && vchildrenLen) {
@@ -726,14 +704,15 @@
 
   function destroyVelem(velem, node) {
       var props = velem.props;
-      var vchildren = node.vchildren;
+
+      var vchildren = props.children;
       var childNodes = node.childNodes;
 
       for (var i = 0, len = vchildren.length; i < len; i++) {
           destroyVnode(vchildren[i], childNodes[i]);
       }
 
-      node.eventStore = node.vchildren = null;
+      node.eventStore = null;
       for (var key in props) {
           if (EVENT_RE.test(key)) {
               key = getEventName(key);
@@ -787,11 +766,6 @@
       return vnode;
   }
 
-  function batchUpdateDOM() {
-      clearPendingPropsUpdater();
-      clearPendingTextUpdater();
-  }
-
   var pendingTextUpdater = [];
   var clearPendingTextUpdater = function clearPendingTextUpdater() {
       var len = pendingTextUpdater.length;
@@ -799,11 +773,11 @@
           return;
       }
       var list = pendingTextUpdater;
-      pendingTextUpdater = [];
       for (var i = 0; i < len; i++) {
           var node = list[i];
           node.nodeValue = node.newText;
       }
+      pendingTextUpdater.length = 0;
   };
 
   var pendingPropsUpdater = [];
@@ -813,12 +787,12 @@
           return;
       }
       var list = pendingPropsUpdater;
-      pendingPropsUpdater = [];
       for (var i = 0; i < len; i++) {
           var node = list[i];
           patchProps(node, node.props, node.newProps);
           node.props = node.newProps = null;
       }
+      pendingPropsUpdater.length = 0;
   };
 
   function compareTwoVnodes(vnode, newVnode, node) {
@@ -885,7 +859,8 @@
   	}
   	vnodeStore[id] = vnode;
 
-  	batchUpdateDOM();
+  	clearPendingTextUpdater();
+  	clearPendingPropsUpdater();
 
   	argsCache = pendingRendering[id];
   	delete pendingRendering[id];
@@ -914,7 +889,7 @@
   	return false;
   }
 
-  function createElement(type, props, children) {
+  function createElement(type, props) /* ...children */{
   	var finalProps = {};
   	if (props != null) {
   		for (var propKey in props) {
@@ -932,17 +907,18 @@
   	}
 
   	var argsLen = arguments.length;
-  	var finalChildren = children;
-  	if (argsLen > 3) {
-  		finalChildren = Array(argsLen - 2);
-  		for (var i = 2; i < argsLen; i++) {
-  			finalChildren[i - 2] = arguments[i];
+  	var finalChildren = [];
+
+  	for (var i = 2; i < argsLen; i++) {
+  		var child = arguments[i];
+  		if (isArr(child)) {
+  			flattenMerge(child, finalChildren);
+  		} else {
+  			finalChildren[finalChildren.length] = child;
   		}
   	}
 
-  	if (finalChildren !== undefined) {
-  		finalProps.children = finalChildren;
-  	}
+  	finalProps.children = finalChildren;
 
   	var vnode = null;
   	var varType = typeof type;
