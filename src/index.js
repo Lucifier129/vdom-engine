@@ -12,10 +12,10 @@ import { styleDirective } from './CSSPropertyOperations'
 import { eventDirective } from './event-system'
 
 addDirective(DOMAttrDirective)
-addDirective(DOMAttrNSDirective)
 addDirective(DOMPropDirective)
 addDirective(styleDirective)
 addDirective(eventDirective)
+addDirective(DOMAttrNSDirective)
 
 const Vengine = {
 	createElement,

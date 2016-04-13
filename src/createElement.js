@@ -26,7 +26,7 @@ export function createElement(type, props, /* ...children */) {
 	    if (_.isArr(child)) {
 	        _.flattenMerge(child, finalChildren)
 	    } else if (child != null && typeof child !== 'boolean') {
-	        finalChildren[finalChildren.length] = child.vtype ? child : '' + child
+	        finalChildren[finalChildren.length] = child
 	    }
 	}
 

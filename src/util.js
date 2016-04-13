@@ -28,7 +28,7 @@ export function flattenMerge(sourceList, targetList) {
         if (isArr(item)) {
             flattenChildren(item, targetList)
         } else if (item != null && typeof item !== 'boolean') {
-            targetList[targetList.length] = item.vtype ? item : '' + item
+            targetList[targetList.length] = item
         }
     }
 }
@@ -54,7 +54,13 @@ export function getUid() {
 
 export function attachProps(elem, props) {
     for (let propKey in props) {
-        attachProp(elem, propKey, props[propKey], props)
+        let directive = matchDirective(propKey)
+        if (directive) {
+            let propValue = props[propKey]
+            if (propValue != null) {
+                directive.attach(elem, propKey, propValue, props)
+            }
+        }
     }
 }
 
@@ -75,24 +81,6 @@ export function patchProps(elem, props, newProps) {
                 directive.patch(elem, propKey, newProps[propKey], props[propKey], newProps, props)
             }
         }
-    }
-}
-
-
-function attachProp(elem, propKey, propValue, props) {
-    if (propValue == null) {
-        return detachProp(elem, propKey, props)
-    }
-    let directive = matchDirective(propKey)
-    if (directive) {
-        directive.attach(elem, propKey, propValue, props)
-    }
-}
-
-function detachProp(elem, propKey, props) {
-    let directive = matchDirective(propKey)
-    if (directive) {
-        directive.detach(elem, propKey, props)
     }
 }
 

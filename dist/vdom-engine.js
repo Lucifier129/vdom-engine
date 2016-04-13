@@ -445,7 +445,7 @@
           if (isArr(item)) {
               flattenChildren(item, targetList);
           } else if (item != null && typeof item !== 'boolean') {
-              targetList[targetList.length] = item.vtype ? item : '' + item;
+              targetList[targetList.length] = item;
           }
       }
   }
@@ -470,7 +470,13 @@
 
   function attachProps(elem, props) {
       for (var propKey in props) {
-          attachProp(elem, propKey, props[propKey], props);
+          var directive = matchDirective(propKey);
+          if (directive) {
+              var propValue = props[propKey];
+              if (propValue != null) {
+                  directive.attach(elem, propKey, propValue, props);
+              }
+          }
       }
   }
 
@@ -491,23 +497,6 @@
                   directive.patch(elem, propKey, newProps[propKey], props[propKey], newProps, props);
               }
           }
-      }
-  }
-
-  function attachProp(elem, propKey, propValue, props) {
-      if (propValue == null) {
-          return detachProp(elem, propKey, props);
-      }
-      var directive = matchDirective(propKey);
-      if (directive) {
-          directive.attach(elem, propKey, propValue, props);
-      }
-  }
-
-  function detachProp(elem, propKey, props) {
-      var directive = matchDirective(propKey);
-      if (directive) {
-          directive.detach(elem, propKey, props);
       }
   }
 
@@ -533,7 +522,7 @@
 
       var node = null;
       if (!vtype) {
-          node = document.createTextNode(vnode);
+          node = document.createTextNode('' + vnode);
       } else if (vtype === VELEMENT) {
           node = initVelem(vnode, namespaceURI);
       } else if (vtype === VCOMPONENT) {
@@ -594,6 +583,8 @@
 
       if (oldHtml == null && vchildrenLen) {
           var shouldRemove = null;
+          // signal of whether vhild has been matched or not
+          var matches = Array(vchildrenLen);
           var patches = Array(newVchildrenLen);
 
           for (var i = 0; i < vchildrenLen; i++) {
@@ -608,17 +599,17 @@
                           vnode: vnode,
                           node: childNodes[i]
                       };
-                      vchildren[i] = null;
+                      matches[i] = true;
                       break;
                   }
               }
           }
 
           outer: for (var i = 0; i < vchildrenLen; i++) {
-              var vnode = vchildren[i];
-              if (vnode === null) {
+              if (matches[i]) {
                   continue;
               }
+              var vnode = vchildren[i];
               var _type = vnode.type;
 
               var key = vnode.key;
@@ -661,7 +652,7 @@
                       var vtype = newVnode.vtype;
                       if (!vtype) {
                           // textNode
-                          newChildNode.newText = newVnode;
+                          newChildNode.newText = newVnode + '';
                           pendingTextUpdater[pendingTextUpdater.length] = newChildNode;
                       } else if (vtype === VELEMENT) {
                           newChildNode = updateVelem(vnode, newVnode, newChildNode);
@@ -904,7 +895,7 @@
   		if (isArr(child)) {
   			flattenMerge(child, finalChildren);
   		} else if (child != null && typeof child !== 'boolean') {
-  			finalChildren[finalChildren.length] = child.vtype ? child : '' + child;
+  			finalChildren[finalChildren.length] = child;
   		}
   	}
 
@@ -949,10 +940,10 @@
   }
 
   addDirective(DOMAttrDirective);
-  addDirective(DOMAttrNSDirective);
   addDirective(DOMPropDirective);
   addDirective(styleDirective);
   addDirective(eventDirective);
+  addDirective(DOMAttrNSDirective);
 
   var Vengine = {
   	createElement: createElement,

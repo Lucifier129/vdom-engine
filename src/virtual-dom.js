@@ -22,7 +22,7 @@ export function initVnode(vnode, namespaceURI) {
     let { vtype } = vnode
     let node = null
     if (!vtype) {
-        node = document.createTextNode(vnode)
+        node = document.createTextNode('' + vnode)
     } else if (vtype === VELEMENT) {
         node = initVelem(vnode, namespaceURI)
     } else if (vtype === VCOMPONENT) {
@@ -79,6 +79,8 @@ function updateVelem(velem, newVelem, node) {
 
     if (oldHtml == null && vchildrenLen) {
         let shouldRemove = null
+        // signal of whether vhild has been matched or not
+        let matches = Array(vchildrenLen)
         let patches = Array(newVchildrenLen)
 
         for (let i = 0; i < vchildrenLen; i++) {
@@ -93,17 +95,17 @@ function updateVelem(velem, newVelem, node) {
                         vnode: vnode,
                         node: childNodes[i]
                     }
-                    vchildren[i] = null
+                    matches[i] = true
                     break
                 }
             }
         }
 
         outer: for (let i = 0; i < vchildrenLen; i++) {
-            let vnode = vchildren[i]
-            if (vnode === null) {
+            if (matches[i]) {
                 continue
             }
+            let vnode = vchildren[i]
             let { type } = vnode
             let key = vnode.key
             let childNode = childNodes[i]
@@ -144,7 +146,7 @@ function updateVelem(velem, newVelem, node) {
                 if (newVnode !== vnode) {
                     let vtype = newVnode.vtype
                     if (!vtype) { // textNode
-                        newChildNode.newText = newVnode
+                        newChildNode.newText = newVnode + ''
                         pendingTextUpdater[pendingTextUpdater.length] = newChildNode
                     } else if (vtype === VELEMENT) {
                         newChildNode = updateVelem(vnode, newVnode, newChildNode)
