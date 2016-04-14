@@ -85,10 +85,11 @@ function patchDOMProp(elem, propKey, propValue, oldPropValue) {
 	if (propValue === oldPropValue) {
 		return;
 	}
+	var propName = getPropName(propKey);
 	if (propValue == null) {
-		detachDOMProp(elem, propKey);
+		elem[propName] = '';
 	} else {
-		attachDOMProp(elem, propKey, propValue);
+		elem[propName] = propValue;
 	}
 }
 
@@ -99,39 +100,40 @@ function attachDOMAttr(elem, propKey, propValue) {
 
 function detachDOMAttr(elem, propKey) {
 	var attrName = getAttrName(propKey);
-	elem.removeAttribute(attrName, propValue);
+	elem.removeAttribute(attrName);
 }
 
 function patchDOMAttr(elem, propKey, propValue, oldPropValue) {
 	if (propValue === oldPropValue) {
 		return;
 	}
+	var attrName = getAttrName(propKey);
 	if (propValue == null) {
-		detachDOMAttr(elem, propKey);
+		elem.removeAttribute(attrName);
 	} else {
-		attachDOMAttr(elem, propKey, propValue);
+		elem.setAttribute(attrName, propValue);
 	}
 }
 
 function attachDOMAttrNS(elem, propKey, propValue, props) {
 	var attrName = getAttrNSName(propKey);
-	var namespace = props.namespace;
-	elem.setAttributeNS(namespace, attrName, propValue);
+	elem.setAttributeNS(props.namespace, attrName, propValue);
 }
 
 function detachDOMAttrNS(elem, propKey) {
 	var attrName = getAttrNSName(propKey);
-	elem.removeAttribute(attrName, propValue);
+	elem.removeAttribute(attrName);
 }
 
 function patchDOMAttrNS(elem, propKey, propValue, oldPropValue, props) {
 	if (propValue === oldPropValue) {
 		return;
 	}
+	var attrName = getAttrNSName(propKey);
 	if (propValue == null) {
-		detachDOMAttrNS(elem, propKey);
+		elem.removeAttribute(attrName);
 	} else {
-		attachDOMAttrNS(elem, propKey, propValue, props);
+		elem.setAttributeNS(props.namespace, attrName, propValue);
 	}
 }
 
