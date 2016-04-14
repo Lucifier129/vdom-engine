@@ -545,6 +545,21 @@
       }
   }
 
+  function updateVnode(vnode, newVnode, node) {
+      var newNode = node;
+      var vtype = newVnode.vtype;
+      if (!vtype) {
+          // textNode
+          newNode.newText = newVnode + '';
+          pendingTextUpdater[pendingTextUpdater.length] = newNode;
+      } else if (vtype === VELEMENT) {
+          newNode = updateVelem(vnode, newVnode, newNode);
+      } else if (vtype === VCOMPONENT) {
+          newNode = updateVcomponent(vnode, newVnode, newNode);
+      }
+      return newNode;
+  }
+
   function initVelem(velem, namespaceURI) {
       var type = velem.type;
       var props = velem.props;
@@ -552,13 +567,20 @@
       var node = null;
 
       if (type === 'svg' || namespaceURI === SVGNamespaceURI) {
-          node = document.createElementNS(SVGNamespaceURI, type);
           namespaceURI = SVGNamespaceURI;
+          node = document.createElementNS(SVGNamespaceURI, type);
       } else {
           node = document.createElement(type);
       }
 
-      var vchildren = props.children;
+      initVchildren(node, props.children);
+      attachProps(node, props);
+
+      return node;
+  }
+
+  function initVchildren(node, vchildren) {
+      var namespaceURI = node.namespaceURI;
 
       for (var i = 0, len = vchildren.length; i < len; i++) {
           var vchild = vchildren[i];
@@ -566,10 +588,6 @@
           childNode.vnode = vchild;
           node.appendChild(childNode);
       }
-
-      attachProps(node, props);
-
-      return node;
   }
 
   function updateVelem(velem, newVelem, node) {
@@ -578,114 +596,116 @@
 
       var newProps = newVelem.props;
       var oldHtml = props['prop-innerHTML'];
-      var childNodes = node.childNodes;
-      var namespaceURI = node.namespaceURI;
-
       var vchildren = props.children;
       var newVchildren = newProps.children;
-      var vchildrenLen = vchildren.length;
-      var newVchildrenLen = newVchildren.length;
 
-      if (oldHtml == null && vchildrenLen) {
-          var shouldRemove = null;
-          // signal of whether vhild has been matched or not
-          var matches = Array(vchildrenLen);
-          var patches = Array(newVchildrenLen);
-
-          for (var i = 0; i < vchildrenLen; i++) {
-              var vnode = vchildren[i];
-              for (var j = 0; j < newVchildrenLen; j++) {
-                  if (patches[j]) {
-                      continue;
-                  }
-                  var newVnode = newVchildren[j];
-                  if (vnode === newVnode) {
-                      patches[j] = childNodes[i];
-                      matches[i] = true;
-                      break;
-                  }
-              }
-          }
-
-          outer: for (var i = 0; i < vchildrenLen; i++) {
-              if (matches[i]) {
-                  continue;
-              }
-              var vnode = vchildren[i];
-              var _type = vnode.type;
-
-              var key = vnode.key;
-              var childNode = childNodes[i];
-
-              for (var j = 0; j < newVchildrenLen; j++) {
-                  if (patches[j]) {
-                      continue;
-                  }
-                  var newVnode = newVchildren[j];
-                  if (newVnode.type === _type && newVnode.key === key) {
-                      patches[j] = childNode;
-                      continue outer;
-                  }
-              }
-
-              if (!shouldRemove) {
-                  shouldRemove = [];
-              }
-              shouldRemove[shouldRemove.length] = childNode;
-              destroyVnode(vnode, childNode);
-          }
-
-          if (shouldRemove) {
-              for (var i = 0, len = shouldRemove.length; i < len; i++) {
-                  node.removeChild(shouldRemove[i]);
-              }
-          }
-
-          for (var i = 0; i < newVchildrenLen; i++) {
-              var newVnode = newVchildren[i];
-              var patchNode = patches[i];
-              var newChildNode = null;
-              if (patchNode) {
-                  var vnode = patchNode.vnode;
-                  newChildNode = patchNode;
-                  patchNode.vnode = null;
-                  if (newVnode !== vnode) {
-                      var vtype = newVnode.vtype;
-                      if (!vtype) {
-                          // textNode
-                          newChildNode.newText = newVnode + '';
-                          pendingTextUpdater[pendingTextUpdater.length] = newChildNode;
-                      } else if (vtype === VELEMENT) {
-                          newChildNode = updateVelem(vnode, newVnode, newChildNode);
-                      } else if (vtype === VCOMPONENT) {
-                          newChildNode = updateVcomponent(vnode, newVnode, newChildNode);
-                      }
-                  }
-                  var currentNode = childNodes[i];
-                  if (currentNode !== newChildNode) {
-                      node.insertBefore(newChildNode, currentNode || null);
-                  }
-              } else {
-                  var _newChildNode = initVnode(newVnode, namespaceURI);
-                  node.insertBefore(_newChildNode, childNodes[i] || null);
-              }
-              newChildNode.vnode = newVnode;
-          }
+      if (oldHtml == null && vchildren.length) {
+          var patches = diffVchildren(node, vchildren, newVchildren);
+          updateVchildren(node, newVchildren, patches);
+          // collect pending props
           node.props = props;
           node.newProps = newProps;
           pendingPropsUpdater[pendingPropsUpdater.length] = node;
       } else {
           // should patch props first, make sure innerHTML was cleared
           patchProps(node, props, newProps);
-          for (var i = 0; i < newVchildrenLen; i++) {
-              var newVnode = newVchildren[i];
-              var newChildNode = initVnode(newVnode, namespaceURI);
-              newChildNode.vnode = newVnode;
-              node.appendChild(newChildNode);
-          }
+          initVchildren(node, newVchildren);
       }
 
       return node;
+  }
+
+  function updateVchildren(node, newVchildren, patches) {
+      var newVchildrenLen = newVchildren.length;
+      var childNodes = node.childNodes;
+      var namespaceURI = node.namespaceURI;
+
+      for (var i = 0; i < newVchildrenLen; i++) {
+          var newVnode = newVchildren[i];
+          var patchNode = patches[i];
+          var newChildNode = null;
+          if (patchNode) {
+              var vnode = patchNode.vnode;
+              newChildNode = patchNode;
+              patchNode.vnode = null;
+              if (newVnode !== vnode) {
+                  newChildNode = updateVnode(vnode, newVnode, patchNode);
+              }
+              var currentNode = childNodes[i];
+              if (currentNode !== newChildNode) {
+                  node.insertBefore(newChildNode, currentNode || null);
+              }
+          } else {
+              newChildNode = initVnode(newVnode, namespaceURI);
+              node.insertBefore(newChildNode, childNodes[i] || null);
+          }
+          newChildNode.vnode = newVnode;
+      }
+  }
+
+  function diffVchildren(node, vchildren, newVchildren) {
+      var childNodes = node.childNodes;
+
+      var vchildrenLen = vchildren.length;
+      var newVchildrenLen = newVchildren.length;
+
+      // signal of whether vhild has been matched or not
+      var matches = Array(vchildrenLen);
+      var patches = Array(newVchildrenLen);
+      var shouldRemove = null;
+
+      // check equal
+      for (var i = 0; i < vchildrenLen; i++) {
+          var vnode = vchildren[i];
+          for (var j = 0; j < newVchildrenLen; j++) {
+              if (patches[j]) {
+                  continue;
+              }
+              var newVnode = newVchildren[j];
+              if (vnode === newVnode) {
+                  patches[j] = childNodes[i];
+                  matches[i] = true;
+                  break;
+              }
+          }
+      }
+
+      // check similar
+      outer: for (var i = 0; i < vchildrenLen; i++) {
+          if (matches[i]) {
+              continue;
+          }
+          var vnode = vchildren[i];
+          var type = vnode.type;
+
+          var key = vnode.key;
+          var childNode = childNodes[i];
+
+          for (var j = 0; j < newVchildrenLen; j++) {
+              if (patches[j]) {
+                  continue;
+              }
+              var newVnode = newVchildren[j];
+              if (newVnode.type === type && newVnode.key === key) {
+                  patches[j] = childNode;
+                  continue outer;
+              }
+          }
+
+          if (!shouldRemove) {
+              shouldRemove = [];
+          }
+          shouldRemove[shouldRemove.length] = childNode;
+          destroyVnode(vnode, childNode);
+      }
+
+      if (shouldRemove) {
+          for (var i = 0, len = shouldRemove.length; i < len; i++) {
+              node.removeChild(shouldRemove[i]);
+          }
+      }
+
+      return patches;
   }
 
   function destroyVelem(velem, node) {
@@ -820,11 +840,14 @@
   	// should bundle them and render by only one time
   	if (argsCache) {
   		if (argsCache === true) {
-  			pendingRendering[id] = argsCache = [vnode, callback];
+  			pendingRendering[id] = {
+  				vnode: vnode,
+  				callback: callback
+  			};
   		} else {
-  			argsCache[0] = vnode;
+  			argsCache.vnode = vnode;
   			if (callback) {
-  				argsCache[1] = argsCache[1] ? pipe(argsCache[1], callback) : callback;
+  				argsCache.callback = argsCache.callback ? pipe(argsCache.callback, callback) : callback;
   			}
   		}
   		return;

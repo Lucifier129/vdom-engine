@@ -43,142 +43,162 @@ export function destroyVnode(vnode, node) {
     }
 }
 
+function updateVnode(vnode, newVnode, node) {
+    let newNode = node
+    let vtype = newVnode.vtype
+    if (!vtype) { // textNode
+        newNode.newText = newVnode + ''
+        pendingTextUpdater[pendingTextUpdater.length] = newNode
+    } else if (vtype === VELEMENT) {
+        newNode = updateVelem(vnode, newVnode, newNode)
+    } else if (vtype === VCOMPONENT) {
+        newNode = updateVcomponent(vnode, newVnode, newNode)
+    }
+    return newNode
+}
+
 
 function initVelem(velem, namespaceURI) {
     let { type, props } = velem
     let node = null
     
     if (type === 'svg' || namespaceURI === SVGNamespaceURI) {
-        node = document.createElementNS(SVGNamespaceURI, type)
         namespaceURI = SVGNamespaceURI
+        node = document.createElementNS(SVGNamespaceURI, type)
     } else {
         node = document.createElement(type)
     }
 
-    let vchildren = props.children
+    initVchildren(node, props.children)
+    _.attachProps(node, props)
 
+    return node
+}
+
+function initVchildren(node, vchildren) {
+    let { namespaceURI } = node
     for (let i = 0, len = vchildren.length; i < len; i++) {
         let vchild = vchildren[i]
         let childNode = initVnode(vchildren[i], namespaceURI)
         childNode.vnode = vchild
         node.appendChild(childNode)
     }
-
-    _.attachProps(node, props)
-
-    return node
 }
 
 function updateVelem(velem, newVelem, node) {
     let { props, type } = velem
     let newProps = newVelem.props
     let oldHtml = props['prop-innerHTML']
-    let { childNodes, namespaceURI } = node
-
     let vchildren = props.children
     let newVchildren = newProps.children
-    let vchildrenLen = vchildren.length
-    let newVchildrenLen = newVchildren.length
 
-    if (oldHtml == null && vchildrenLen) {
-        let shouldRemove = null
-        // signal of whether vhild has been matched or not
-        let matches = Array(vchildrenLen)
-        let patches = Array(newVchildrenLen)
-
-        for (let i = 0; i < vchildrenLen; i++) {
-            let vnode = vchildren[i]
-            for (let j = 0; j < newVchildrenLen; j++) {
-                if (patches[j]) {
-                    continue
-                }
-                let newVnode = newVchildren[j]
-                if (vnode === newVnode) {
-                    patches[j] = childNodes[i]
-                    matches[i] = true
-                    break
-                }
-            }
-        }
-
-        outer: for (let i = 0; i < vchildrenLen; i++) {
-            if (matches[i]) {
-                continue
-            }
-            let vnode = vchildren[i]
-            let { type } = vnode
-            let key = vnode.key
-            let childNode = childNodes[i]
-
-            for (let j = 0; j < newVchildrenLen; j++) {
-                if (patches[j]) {
-                    continue
-                }
-                let newVnode = newVchildren[j]
-                if (newVnode.type === type && newVnode.key === key) {
-                    patches[j] = childNode
-                    continue outer
-                }
-            }
-
-            if (!shouldRemove) {
-                shouldRemove = []
-            }
-            shouldRemove[shouldRemove.length] = childNode
-            destroyVnode(vnode, childNode)
-        }
-
-        if (shouldRemove) {
-            for (let i = 0, len = shouldRemove.length; i < len; i++) {
-                node.removeChild(shouldRemove[i])
-            }
-        }
-        
-        for (let i = 0; i < newVchildrenLen; i++) {
-            let newVnode = newVchildren[i]
-            let patchNode = patches[i]
-            let newChildNode = null
-            if (patchNode) {
-                let vnode = patchNode.vnode
-                newChildNode = patchNode
-                patchNode.vnode = null
-                if (newVnode !== vnode) {
-                    let vtype = newVnode.vtype
-                    if (!vtype) { // textNode
-                        newChildNode.newText = newVnode + ''
-                        pendingTextUpdater[pendingTextUpdater.length] = newChildNode
-                    } else if (vtype === VELEMENT) {
-                        newChildNode = updateVelem(vnode, newVnode, newChildNode)
-                    } else if (vtype === VCOMPONENT) {
-                        newChildNode = updateVcomponent(vnode, newVnode, newChildNode)
-                    }
-                }
-                let currentNode = childNodes[i]
-                if (currentNode !== newChildNode) {
-                    node.insertBefore(newChildNode, currentNode || null)
-                }
-            } else {
-                let newChildNode = initVnode(newVnode, namespaceURI)
-                node.insertBefore(newChildNode, childNodes[i] || null)
-            }
-            newChildNode.vnode = newVnode
-        }
+    if (oldHtml == null && vchildren.length) {
+        let patches = diffVchildren(node, vchildren, newVchildren)
+        updateVchildren(node, newVchildren, patches)
+        // collect pending props
         node.props = props
         node.newProps = newProps
         pendingPropsUpdater[pendingPropsUpdater.length] = node
     } else {
         // should patch props first, make sure innerHTML was cleared 
         _.patchProps(node, props, newProps)
-        for (let i = 0; i < newVchildrenLen; i++) {
-            let newVnode = newVchildren[i]
-            let newChildNode = initVnode(newVnode, namespaceURI)
-            newChildNode.vnode = newVnode
-            node.appendChild(newChildNode)
-        }
+        initVchildren(node, newVchildren)
     }
 
     return node
 }
+
+function updateVchildren(node, newVchildren, patches) {
+    let newVchildrenLen = newVchildren.length
+    let { childNodes, namespaceURI } = node
+
+    for (let i = 0; i < newVchildrenLen; i++) {
+        let newVnode = newVchildren[i]
+        let patchNode = patches[i]
+        let newChildNode = null
+        if (patchNode) {
+            let vnode = patchNode.vnode
+            newChildNode = patchNode
+            patchNode.vnode = null
+            if (newVnode !== vnode) {
+                newChildNode = updateVnode(vnode, newVnode, patchNode)
+            }
+            let currentNode = childNodes[i]
+            if (currentNode !== newChildNode) {
+                node.insertBefore(newChildNode, currentNode || null)
+            }
+        } else {
+            newChildNode = initVnode(newVnode, namespaceURI)
+            node.insertBefore(newChildNode, childNodes[i] || null)
+        }
+        newChildNode.vnode = newVnode
+    }
+}
+
+function diffVchildren(node, vchildren, newVchildren) {
+    let { childNodes } = node
+    let vchildrenLen = vchildren.length
+    let newVchildrenLen = newVchildren.length
+
+    // signal of whether vhild has been matched or not
+    let matches = Array(vchildrenLen)
+    let patches = Array(newVchildrenLen)
+    let shouldRemove = null
+
+    // check equal
+    for (let i = 0; i < vchildrenLen; i++) {
+        let vnode = vchildren[i]
+        for (let j = 0; j < newVchildrenLen; j++) {
+            if (patches[j]) {
+                continue
+            }
+            let newVnode = newVchildren[j]
+            if (vnode === newVnode) {
+                patches[j] = childNodes[i]
+                matches[i] = true
+                break
+            }
+        }
+    }
+
+    // check similar
+    outer: for (let i = 0; i < vchildrenLen; i++) {
+        if (matches[i]) {
+            continue
+        }
+        let vnode = vchildren[i]
+        let { type } = vnode
+        let key = vnode.key
+        let childNode = childNodes[i]
+
+        for (let j = 0; j < newVchildrenLen; j++) {
+            if (patches[j]) {
+                continue
+            }
+            let newVnode = newVchildren[j]
+            if (newVnode.type === type && newVnode.key === key) {
+                patches[j] = childNode
+                continue outer
+            }
+        }
+
+        if (!shouldRemove) {
+            shouldRemove = []
+        }
+        shouldRemove[shouldRemove.length] = childNode
+        destroyVnode(vnode, childNode)
+    }
+
+    if (shouldRemove) {
+        for (let i = 0, len = shouldRemove.length; i < len; i++) {
+            node.removeChild(shouldRemove[i])
+        }
+    }
+
+    return patches
+}
+
+
 
 function destroyVelem(velem, node) {
     let { props } = velem

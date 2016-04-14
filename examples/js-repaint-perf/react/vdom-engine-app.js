@@ -3,28 +3,28 @@
 function DBMon(props) {
     return (
       <div prop-id="container">
-        <table attr-class="table table-striped latest-data">
+        <table prop-className="table table-striped latest-data">
           <tbody>
             {
               props.databases.map(function(database) {
                 return (
                   <tr key={database.dbname}>
-                    <td attr-class="dbname">
+                    <td prop-className="dbname">
                       {database.dbname}
                     </td>
-                    <td attr-class="query-count">
-                      <span attr-class={database.lastSample.countClassName}>
+                    <td prop-className="query-count">
+                      <span prop-className={database.lastSample.countClassName}>
                         {database.lastSample.queries.length}
                       </span>
                     </td>
                       {
                         database.lastSample.topFiveQueries.map(function(query, index) {
                           return (
-                            <td attr-class={ "Query " + query.elapsedClassName}>
+                            <td prop-className={ "Query " + query.elapsedClassName}>
                               {query.formatElapsed}
-                              <div attr-class="popover left">
-                                <div attr-class="popover-content">{query.query}</div>
-                                <div attr-class="arrow"/>
+                              <div prop-className="popover left">
+                                <div prop-className="popover-content">{query.query}</div>
+                                <div prop-className="arrow"/>
                               </div>
                             </td>
                           );

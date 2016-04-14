@@ -22,11 +22,14 @@ export function render(vnode, container, callback) {
 	// should bundle them and render by only one time
 	if (argsCache) {
 		if (argsCache === true) {
-			pendingRendering[id] = argsCache = [vnode, callback]
+			pendingRendering[id] = {
+				vnode: vnode,
+				callback: callback
+			}
 		} else {
-			argsCache[0] = vnode
+			argsCache.vnode = vnode
 			if (callback) {
-				argsCache[1] = argsCache[1] ? _.pipe(argsCache[1], callback) : callback
+				argsCache.callback = argsCache.callback ? _.pipe(argsCache.callback, callback) : callback
 			}
 		}
 		return
