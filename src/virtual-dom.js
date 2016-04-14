@@ -143,8 +143,14 @@ function diffVchildren(node, vchildren, newVchildren) {
     // signal of whether vhild has been matched or not
     let matches = Array(vchildrenLen)
     let patches = Array(newVchildrenLen)
-    let shouldRemove = null
+    checkEqual(vchildren, newVchildren, childNodes, patches, matches)
+    checkSimilar(vchildren, newVchildren, childNodes, patches, matches)
+    return patches
+}
 
+function checkEqual(vchildren, newVchildren, childNodes, patches, matches) {
+    let vchildrenLen = vchildren.length
+    let newVchildrenLen = newVchildren.length
     // check equal
     for (let i = 0; i < vchildrenLen; i++) {
         let vnode = vchildren[i]
@@ -160,17 +166,23 @@ function diffVchildren(node, vchildren, newVchildren) {
             }
         }
     }
+}
+
+function checkSimilar(vchildren, newVchildren, childNodes, patches, matches) {
+    let vchildrenLen = vchildren.length
+    let newVchildrenLen = newVchildren.length
+    let shouldRemove = null
 
     // check similar
-    outer: for (let i = 0; i < vchildrenLen; i++) {
+    for (let i = 0; i < vchildrenLen; i++) {
         if (matches[i]) {
             continue
         }
-        let vnode = vchildren[i]
-        let { type } = vnode
-        let key = vnode.key
         let childNode = childNodes[i]
-
+        let vnode = vchildren[i]
+        let { type, key } = vnode
+        let isMatch = false
+        
         for (let j = 0; j < newVchildrenLen; j++) {
             if (patches[j]) {
                 continue
@@ -178,26 +190,27 @@ function diffVchildren(node, vchildren, newVchildren) {
             let newVnode = newVchildren[j]
             if (newVnode.type === type && newVnode.key === key) {
                 patches[j] = childNode
-                continue outer
+                isMatch = true
+                break
             }
         }
 
-        if (!shouldRemove) {
-            shouldRemove = []
+        if (!isMatch) {
+            if (!shouldRemove) {
+                shouldRemove = []
+            }
+            shouldRemove[shouldRemove.length] = childNode
+            destroyVnode(vnode, childNode)
         }
-        shouldRemove[shouldRemove.length] = childNode
-        destroyVnode(vnode, childNode)
     }
 
     if (shouldRemove) {
         for (let i = 0, len = shouldRemove.length; i < len; i++) {
-            node.removeChild(shouldRemove[i])
+            let childNode = shouldRemove[i]
+            childNode.parentNode.removeChild(childNode)
         }
     }
-
-    return patches
 }
-
 
 
 function destroyVelem(velem, node) {
@@ -268,8 +281,9 @@ export let clearPendingTextUpdater = () => {
         return
     }
     let list = pendingTextUpdater
-    for (let i = 0; i < len; i++) {
-        let node = list[i]
+    let i = -1
+    while (len--) {
+        let node = list[++i]
         node.nodeValue = node.newText
     }
     pendingTextUpdater.length = 0
@@ -282,8 +296,9 @@ export let clearPendingPropsUpdater = () => {
         return
     }
     let list = pendingPropsUpdater
-    for (let i = 0; i < len; i++) {
-        let node = list[i]
+    let i = -1
+    while (len--) {
+        let node = list[++i]
         _.patchProps(node, node.props, node.newProps)
         node.props = node.newProps = null
     }

@@ -652,8 +652,14 @@
       // signal of whether vhild has been matched or not
       var matches = Array(vchildrenLen);
       var patches = Array(newVchildrenLen);
-      var shouldRemove = null;
+      checkEqual(vchildren, newVchildren, childNodes, patches, matches);
+      checkSimilar(vchildren, newVchildren, childNodes, patches, matches);
+      return patches;
+  }
 
+  function checkEqual(vchildren, newVchildren, childNodes, patches, matches) {
+      var vchildrenLen = vchildren.length;
+      var newVchildrenLen = newVchildren.length;
       // check equal
       for (var i = 0; i < vchildrenLen; i++) {
           var vnode = vchildren[i];
@@ -669,17 +675,24 @@
               }
           }
       }
+  }
+
+  function checkSimilar(vchildren, newVchildren, childNodes, patches, matches) {
+      var vchildrenLen = vchildren.length;
+      var newVchildrenLen = newVchildren.length;
+      var shouldRemove = null;
 
       // check similar
-      outer: for (var i = 0; i < vchildrenLen; i++) {
+      for (var i = 0; i < vchildrenLen; i++) {
           if (matches[i]) {
               continue;
           }
+          var childNode = childNodes[i];
           var vnode = vchildren[i];
           var type = vnode.type;
-
           var key = vnode.key;
-          var childNode = childNodes[i];
+
+          var isMatch = false;
 
           for (var j = 0; j < newVchildrenLen; j++) {
               if (patches[j]) {
@@ -688,24 +701,26 @@
               var newVnode = newVchildren[j];
               if (newVnode.type === type && newVnode.key === key) {
                   patches[j] = childNode;
-                  continue outer;
+                  isMatch = true;
+                  break;
               }
           }
 
-          if (!shouldRemove) {
-              shouldRemove = [];
+          if (!isMatch) {
+              if (!shouldRemove) {
+                  shouldRemove = [];
+              }
+              shouldRemove[shouldRemove.length] = childNode;
+              destroyVnode(vnode, childNode);
           }
-          shouldRemove[shouldRemove.length] = childNode;
-          destroyVnode(vnode, childNode);
       }
 
       if (shouldRemove) {
           for (var i = 0, len = shouldRemove.length; i < len; i++) {
-              node.removeChild(shouldRemove[i]);
+              var childNode = shouldRemove[i];
+              childNode.parentNode.removeChild(childNode);
           }
       }
-
-      return patches;
   }
 
   function destroyVelem(velem, node) {
@@ -779,8 +794,9 @@
           return;
       }
       var list = pendingTextUpdater;
-      for (var i = 0; i < len; i++) {
-          var node = list[i];
+      var i = -1;
+      while (len--) {
+          var node = list[++i];
           node.nodeValue = node.newText;
       }
       pendingTextUpdater.length = 0;
@@ -793,8 +809,9 @@
           return;
       }
       var list = pendingPropsUpdater;
-      for (var i = 0; i < len; i++) {
-          var node = list[i];
+      var i = -1;
+      while (len--) {
+          var node = list[++i];
           patchProps(node, node.props, node.newProps);
           node.props = node.newProps = null;
       }
