@@ -9,87 +9,136 @@
   global.Vengine = factory();
 }(this, function () { 'use strict';
 
-  var directives = [];
+  var isArr = Array.isArray;
 
-  function addDirective(directiveConfig) {
-  	directives.push(directiveConfig);
+  function identity(obj) {
+      return obj;
   }
 
-  function removeDirective(directiveConfig) {
-  	directives = directives.filter(function (item) {
-  		return item !== directiveConfig;
-  	});
+  function pipe(fn1, fn2) {
+      return function () {
+          fn1.apply(this, arguments);
+          return fn2.apply(this, arguments);
+      };
+  }
+
+  function flattenMerge(sourceList, targetList) {
+      var len = sourceList.length;
+      var i = -1;
+
+      while (len--) {
+          var item = sourceList[++i];
+          if (isArr(item)) {
+              flattenChildren(item, targetList);
+          } else if (item != null && typeof item !== 'boolean') {
+              targetList[targetList.length] = item;
+          }
+      }
+  }
+
+  function extend(to, from) {
+      if (!from) {
+          return to;
+      }
+      var keys = Object.keys(from);
+      var i = keys.length;
+      while (i--) {
+          to[keys[i]] = from[keys[i]];
+      }
+      return to;
+  }
+
+  var uid = 0;
+
+  function getUid() {
+      return ++uid;
+  }
+
+  function attachProps(elem, props) {
+      for (var propKey in props) {
+          var directive = matchDirective(propKey);
+          if (directive) {
+              var propValue = props[propKey];
+              if (propValue != null) {
+                  directive.attach(elem, directive.key, propValue, props);
+              }
+          }
+      }
+  }
+
+  function patchProps(elem, props, newProps) {
+      var keyMap = {};
+      var directive = null;
+      for (var propKey in props) {
+          keyMap[propKey] = true;
+          directive = matchDirective(propKey);
+          if (directive) {
+              directive.patch(elem, directive.key, newProps[propKey], props[propKey], newProps, props);
+          }
+      }
+      for (var propKey in newProps) {
+          if (keyMap[propKey] !== true) {
+              directive = matchDirective(propKey);
+              if (directive) {
+                  directive.patch(elem, directive.key, newProps[propKey], props[propKey], newProps, props);
+              }
+          }
+      }
+  }
+
+  if (!Object.freeze) {
+      Object.freeze = identity;
+  }
+
+  var directives = {};
+  var DIRECTIVE_SPEC = /^(.+)-(.+)/;
+
+  function addDirective(name, methods) {
+  	directives[name] = methods;
+  }
+
+  function removeDirective(name) {
+  	delete directives[name];
   }
 
   function matchDirective(propKey) {
-  	for (var i = 0, len = directives.length; i < len; i++) {
-  		var directive = directives[i];
-  		var test = directive.test;
-  		var testType = typeof test;
-  		var isMatched = false;
-
-  		if (testType === 'string') {
-  			// in this case, test is a string check whether equal to propKey or not
-  			if (propKey === test) {
-  				isMatched = true;
-  			}
-  		} else if (testType === 'function') {
-  			// in this case, test is a custrom test function that return boolean value
-  			if (test(propKey)) {
-  				isMatched = true;
-  			}
-  		} else {
-  			// in this case, test should be a regexp or obj which has test method and return boolean value
-  			isMatched = test.test(propKey);
-  		}
-
-  		// return the directive by first match
-  		if (isMatched) {
+  	if (propKey === 'style') {
+  		return directives.style;
+  	}
+  	var matches = propKey.match(DIRECTIVE_SPEC);
+  	if (matches) {
+  		var directive = directives[matches[1]];
+  		if (directive) {
+  			directive.key = matches[2];
   			return directive;
   		}
   	}
   }
 
-  var PROP_RE = /^prop-(.+)/;
-  var ATTR_RE = /^(attr|data|aria)-(.+)/;
-  var ATTR_NS_RE = /^attrns-(.+)/; // attribute with namespace
-
   var DOMPropDirective = {
-  	test: PROP_RE,
   	attach: attachDOMProp,
   	detach: detachDOMProp,
   	patch: patchDOMProp
   };
 
   var DOMAttrDirective = {
-  	test: ATTR_RE,
   	attach: attachDOMAttr,
   	detach: detachDOMAttr,
   	patch: patchDOMAttr
   };
 
-  var DOMAttrNSDirective = {
-  	test: ATTR_NS_RE,
-  	attach: attachDOMAttrNS,
-  	detach: detachDOMAttrNS,
-  	patch: patchDOMAttrNS
-  };
-
-  function attachDOMProp(elem, propKey, propValue) {
-  	var propName = getPropName(propKey);
+  function attachDOMProp(elem, propName, propValue) {
   	elem[propName] = propValue;
   }
 
-  function detachDOMProp(elem, propKey) {
-  	var propName = getPropName(propKey);
+  function detachDOMProp(elem, propName) {
   	elem[propName] = '';
   }
 
-  function patchDOMProp(elem, propKey, propValue, oldPropValue) {
+  function patchDOMProp(elem, propName, propValue, oldPropValue) {
   	if (propValue === oldPropValue) {
   		return;
   	}
-  	var propName = getPropName(propKey);
   	if (propValue == null) {
   		elem[propName] = '';
   	} else {
@@ -97,186 +146,23 @@
   	}
   }
 
-  function attachDOMAttr(elem, propKey, propValue) {
-  	var attrName = getAttrName(propKey);
+  function attachDOMAttr(elem, attrName, propValue) {
   	elem.setAttribute(attrName, propValue);
   }
 
-  function detachDOMAttr(elem, propKey) {
-  	var attrName = getAttrName(propKey);
+  function detachDOMAttr(elem, attrName) {
   	elem.removeAttribute(attrName);
   }
 
-  function patchDOMAttr(elem, propKey, propValue, oldPropValue) {
+  function patchDOMAttr(elem, attrName, propValue, oldPropValue) {
   	if (propValue === oldPropValue) {
   		return;
   	}
-  	var attrName = getAttrName(propKey);
   	if (propValue == null) {
   		elem.removeAttribute(attrName);
   	} else {
   		elem.setAttribute(attrName, propValue);
   	}
-  }
-
-  function attachDOMAttrNS(elem, propKey, propValue, props) {
-  	var attrName = getAttrNSName(propKey);
-  	elem.setAttributeNS(props.namespace, attrName, propValue);
-  }
-
-  function detachDOMAttrNS(elem, propKey) {
-  	var attrName = getAttrNSName(propKey);
-  	elem.removeAttribute(attrName);
-  }
-
-  function patchDOMAttrNS(elem, propKey, propValue, oldPropValue, props) {
-  	if (propValue === oldPropValue) {
-  		return;
-  	}
-  	var attrName = getAttrNSName(propKey);
-  	if (propValue == null) {
-  		elem.removeAttribute(attrName);
-  	} else {
-  		elem.setAttributeNS(props.namespace, attrName, propValue);
-  	}
-  }
-
-  function getPropName(propKey) {
-  	// 'prop-value'.match(PROP_RE) -> ["prop-value", "value"]
-  	return propKey.match(PROP_RE)[1];
-  }
-
-  function getAttrName(propKey) {
-  	// 'attr-id'.match(/^(attr|data|aria)-(.+)/) -> ["attr-id", "attr", "id"]
-  	// 'data-id'.match(/^(attr|data|aria)-(.+)/) -> ["data-id", "data", "id"]
-  	var result = propKey.match(ATTR_RE);
-  	// should return all propKey if it is data-* or aria-*
-  	return result[1] === 'attr' ? result[2] : result[0];
-  }
-
-  function getAttrNSName(propKey) {
-  	// 'attrns-test'.match(/^attrns-(.+)/) -> ["attrns-test", "test"]
-  	return propKey.match(ATTR_NS_RE)[1];
-  }
-
-  var styleDirective = {
-      test: 'style',
-      attach: attachStyle,
-      detach: detachStyle,
-      patch: patchStyle
-  };
-
-  function attachStyle(elemStyle, styles) {
-      for (var styleName in styles) {
-          setStyleValue(elemStyle, styleName, styles[styleName]);
-      }
-  }
-
-  function detachStyle(elemStyle, styles) {
-      for (var styleName in styles) {
-          elemStyle[styleName] = '';
-      }
-  }
-
-  function patchStyle(elemStyle, style, newStyle) {
-      if (style === newStyle) {
-          return;
-      }
-      if (!newStyle && style) {
-          detachStyle(elemStyle, style);
-          return;
-      } else if (newStyle && !style) {
-          attachStyle(elemStyle, newStyle);
-          return;
-      }
-
-      var keyMap = {};
-      for (var key in style) {
-          keyMap[key] = true;
-          if (style[key] !== newStyle[key]) {
-              setStyleValue(elemStyle, key, newStyle[key]);
-          }
-      }
-      for (var key in newStyle) {
-          if (keyMap[key] !== true) {
-              if (style[key] !== newStyle[key]) {
-                  setStyleValue(elemStyle, key, newStyle[key]);
-              }
-          }
-      }
-  }
-
-  /**
-   * CSS properties which accept numbers but are not in units of "px".
-   */
-  var isUnitlessNumber = {
-      animationIterationCount: 1,
-      borderImageOutset: 1,
-      borderImageSlice: 1,
-      borderImageWidth: 1,
-      boxFlex: 1,
-      boxFlexGroup: 1,
-      boxOrdinalGroup: 1,
-      columnCount: 1,
-      flex: 1,
-      flexGrow: 1,
-      flexPositive: 1,
-      flexShrink: 1,
-      flexNegative: 1,
-      flexOrder: 1,
-      gridRow: 1,
-      gridColumn: 1,
-      fontWeight: 1,
-      lineClamp: 1,
-      lineHeight: 1,
-      opacity: 1,
-      order: 1,
-      orphans: 1,
-      tabSize: 1,
-      widows: 1,
-      zIndex: 1,
-      zoom: 1,
-
-      // SVG-related properties
-      fillOpacity: 1,
-      floodOpacity: 1,
-      stopOpacity: 1,
-      strokeDasharray: 1,
-      strokeDashoffset: 1,
-      strokeMiterlimit: 1,
-      strokeOpacity: 1,
-      strokeWidth: 1
-  };
-
-  function prefixKey(prefix, key) {
-      return prefix + key.charAt(0).toUpperCase() + key.substring(1);
-  }
-
-  var prefixes = ['Webkit', 'ms', 'Moz', 'O'];
-
-  Object.keys(isUnitlessNumber).forEach(function (prop) {
-      prefixes.forEach(function (prefix) {
-          isUnitlessNumber[prefixKey(prefix, prop)] = 1;
-      });
-  });
-
-  var RE_NUMBER = /^-?\d+(\.\d+)?$/;
-  function setStyleValue(elemStyle, styleName, styleValue) {
-
-      if (!isUnitlessNumber[styleName] && RE_NUMBER.test(styleValue)) {
-          elemStyle[styleName] = styleValue + 'px';
-          return;
-      }
-
-      if (styleName === 'float') {
-          styleName = 'cssFloat';
-      }
-
-      if (styleValue == null || typeof styleValue === 'boolean') {
-          styleValue = '';
-      }
-
-      elemStyle[styleName] = styleValue;
   }
 
   var notBubbleEvents = {
@@ -301,7 +187,6 @@
   var EVENT_RE = /^on-.+/i;
 
   var eventDirective = {
-  	test: EVENT_RE,
   	attach: attachEvent,
   	detach: detachEvent,
   	patch: patchEvent
@@ -425,85 +310,123 @@
   	return syntheticEvent;
   }
 
-  var isArr = Array.isArray;
+  var styleDirective = {
+      attach: attachStyle,
+      detach: detachStyle,
+      patch: patchStyle
+  };
 
-  function identity(obj) {
-      return obj;
-  }
-
-  function pipe(fn1, fn2) {
-      return function () {
-          fn1.apply(this, arguments);
-          return fn2.apply(this, arguments);
-      };
-  }
-
-  function flattenMerge(sourceList, targetList) {
-      var len = sourceList.length;
-      var i = -1;
-
-      while (len--) {
-          var item = sourceList[++i];
-          if (isArr(item)) {
-              flattenChildren(item, targetList);
-          } else if (item != null && typeof item !== 'boolean') {
-              targetList[targetList.length] = item;
-          }
+  function attachStyle(elemStyle, styles) {
+      for (var styleName in styles) {
+          setStyleValue(elemStyle, styleName, styles[styleName]);
       }
   }
 
-  function extend(to, from) {
-      if (!from) {
-          return to;
-      }
-      var keys = Object.keys(from);
-      var i = keys.length;
-      while (i--) {
-          to[keys[i]] = from[keys[i]];
-      }
-      return to;
-  }
-
-  var uid = 0;
-
-  function getUid() {
-      return ++uid;
-  }
-
-  function attachProps(elem, props) {
-      for (var propKey in props) {
-          var directive = matchDirective(propKey);
-          if (directive) {
-              var propValue = props[propKey];
-              if (propValue != null) {
-                  directive.attach(elem, propKey, propValue, props);
-              }
-          }
+  function detachStyle(elemStyle, styles) {
+      for (var styleName in styles) {
+          elemStyle[styleName] = '';
       }
   }
 
-  function patchProps(elem, props, newProps) {
+  function patchStyle(elemStyle, style, newStyle) {
+      if (style === newStyle) {
+          return;
+      }
+      if (!newStyle && style) {
+          detachStyle(elemStyle, style);
+          return;
+      } else if (newStyle && !style) {
+          attachStyle(elemStyle, newStyle);
+          return;
+      }
+
       var keyMap = {};
-      var directive = null;
-      for (var propKey in props) {
-          keyMap[propKey] = true;
-          directive = matchDirective(propKey);
-          if (directive) {
-              directive.patch(elem, propKey, newProps[propKey], props[propKey], newProps, props);
+      for (var key in style) {
+          keyMap[key] = true;
+          if (style[key] !== newStyle[key]) {
+              setStyleValue(elemStyle, key, newStyle[key]);
           }
       }
-      for (var propKey in newProps) {
-          if (keyMap[propKey] !== true) {
-              directive = matchDirective(propKey);
-              if (directive) {
-                  directive.patch(elem, propKey, newProps[propKey], props[propKey], newProps, props);
+      for (var key in newStyle) {
+          if (keyMap[key] !== true) {
+              if (style[key] !== newStyle[key]) {
+                  setStyleValue(elemStyle, key, newStyle[key]);
               }
           }
       }
   }
 
-  if (!Object.freeze) {
-      Object.freeze = identity;
+  /**
+   * CSS properties which accept numbers but are not in units of "px".
+   */
+  var isUnitlessNumber = {
+      animationIterationCount: 1,
+      borderImageOutset: 1,
+      borderImageSlice: 1,
+      borderImageWidth: 1,
+      boxFlex: 1,
+      boxFlexGroup: 1,
+      boxOrdinalGroup: 1,
+      columnCount: 1,
+      flex: 1,
+      flexGrow: 1,
+      flexPositive: 1,
+      flexShrink: 1,
+      flexNegative: 1,
+      flexOrder: 1,
+      gridRow: 1,
+      gridColumn: 1,
+      fontWeight: 1,
+      lineClamp: 1,
+      lineHeight: 1,
+      opacity: 1,
+      order: 1,
+      orphans: 1,
+      tabSize: 1,
+      widows: 1,
+      zIndex: 1,
+      zoom: 1,
+
+      // SVG-related properties
+      fillOpacity: 1,
+      floodOpacity: 1,
+      stopOpacity: 1,
+      strokeDasharray: 1,
+      strokeDashoffset: 1,
+      strokeMiterlimit: 1,
+      strokeOpacity: 1,
+      strokeWidth: 1
+  };
+
+  function prefixKey(prefix, key) {
+      return prefix + key.charAt(0).toUpperCase() + key.substring(1);
+  }
+
+  var prefixes = ['Webkit', 'ms', 'Moz', 'O'];
+
+  Object.keys(isUnitlessNumber).forEach(function (prop) {
+      prefixes.forEach(function (prefix) {
+          isUnitlessNumber[prefixKey(prefix, prop)] = 1;
+      });
+  });
+
+  var RE_NUMBER = /^-?\d+(\.\d+)?$/;
+  function setStyleValue(elemStyle, styleName, styleValue) {
+
+      if (!isUnitlessNumber[styleName] && RE_NUMBER.test(styleValue)) {
+          elemStyle[styleName] = styleValue + 'px';
+          return;
+      }
+
+      if (styleName === 'float') {
+          styleName = 'cssFloat';
+      }
+
+      if (styleValue == null || typeof styleValue === 'boolean') {
+          styleValue = '';
+      }
+
+      elemStyle[styleName] = styleValue;
   }
 
   var SVGNamespaceURI = 'http://www.w3.org/2000/svg';
@@ -984,11 +907,12 @@
   	return factory;
   }
 
-  addDirective(DOMAttrDirective);
-  addDirective(DOMPropDirective);
-  addDirective(styleDirective);
-  addDirective(eventDirective);
-  addDirective(DOMAttrNSDirective);
+  addDirective('attr', DOMAttrDirective);
+  addDirective('data', DOMAttrDirective);
+  addDirective('aria', DOMAttrDirective);
+  addDirective('prop', DOMPropDirective);
+  addDirective('on', eventDirective);
+  addDirective('style', styleDirective);
 
   var Vengine = {
   	createElement: createElement,

@@ -1,39 +1,27 @@
 // directive store
-let directives = []
+import { isArr } from './util'
 
-export function addDirective(directiveConfig) {
-	directives.push(directiveConfig)
+let directives = {}
+let DIRECTIVE_SPEC = /^(.+)-(.+)/
+
+export function addDirective(name, methods) {
+	directives[name] = methods
 }
 
-export function removeDirective(directiveConfig) {
-	directives = directives.filter(item => item !== directiveConfig)
+export function removeDirective(name) {
+	delete directives[name]
 }
 
 export function matchDirective(propKey) {
-	for (let i = 0, len = directives.length; i < len; i++) {
-	    let directive = directives[i]
-	    let test = directive.test
-	    let testType = typeof test
-	    let isMatched = false
-
-	    if (testType === 'string') {
-	    	// in this case, test is a string check whether equal to propKey or not
-	        if (propKey === test) {
-	            isMatched = true
-	        }
-	    } else if (testType === 'function') {
-	    	// in this case, test is a custrom test function that return boolean value
-	        if (test(propKey)) {
-	            isMatched = true
-	        }
-	    } else {
-	        // in this case, test should be a regexp or obj which has test method and return boolean value
-	        isMatched = test.test(propKey)
-	    }
-
-	    // return the directive by first match
-	    if (isMatched) {
-	    	return directive
-	    }
+	if (propKey === 'style') {
+		return directives.style
+	}
+	let matches = propKey.match(DIRECTIVE_SPEC)
+	if (matches) {
+		let directive = directives[matches[1]]
+		if (directive) {
+			directive.key = matches[2]
+			return directive
+		}
 	}
 }

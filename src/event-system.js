@@ -21,7 +21,6 @@ export const notBubbleEvents = {
 export const EVENT_RE = /^on-.+/i
 
 export let eventDirective = {
-	test: EVENT_RE,
 	attach: attachEvent,
 	detach: detachEvent,
 	patch: patchEvent

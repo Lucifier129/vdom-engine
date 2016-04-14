@@ -3,7 +3,6 @@
  */
 
 export let styleDirective = {
-    test: 'style',
     attach: attachStyle,
     detach: detachStyle,
     patch: patchStyle

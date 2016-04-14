@@ -58,7 +58,7 @@ export function attachProps(elem, props) {
         if (directive) {
             let propValue = props[propKey]
             if (propValue != null) {
-                directive.attach(elem, propKey, propValue, props)
+                directive.attach(elem, directive.key, propValue, props)
             }
         }
     }
@@ -71,14 +71,14 @@ export function patchProps(elem, props, newProps) {
         keyMap[propKey] = true
         directive = matchDirective(propKey)
         if (directive) {
-            directive.patch(elem, propKey, newProps[propKey], props[propKey], newProps, props)
+            directive.patch(elem, directive.key, newProps[propKey], props[propKey], newProps, props)
         }
     }
     for (let propKey in newProps) {
         if (keyMap[propKey] !== true) {
             directive = matchDirective(propKey)
             if (directive) {
-                directive.patch(elem, propKey, newProps[propKey], props[propKey], newProps, props)
+                directive.patch(elem, directive.key, newProps[propKey], props[propKey], newProps, props)
             }
         }
     }
