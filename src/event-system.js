@@ -22,8 +22,7 @@ export const EVENT_RE = /^on-.+/i
 
 export let eventDirective = {
 	attach: attachEvent,
-	detach: detachEvent,
-	patch: patchEvent
+	detach: detachEvent
 }
 
 // Mobile Safari does not fire properly bubble click events on
@@ -35,12 +34,12 @@ let emptyFunction = () => {}
 let ON_CLICK_KEY = 'onclick'
 
 export function getEventName(key) {
-	return key.replace('on-', 'on').toLowerCase()
+	return key.replace(/^on-/, 'on').toLowerCase()
 }
 
 let eventTypes = {}
 function attachEvent(elem, eventType, listener) {
-	eventType = getEventName(eventType)
+	eventType = 'on' + eventType
 
 	if (notBubbleEvents[eventType] === 1) {
 		elem[eventType] = listener
@@ -68,7 +67,7 @@ function attachEvent(elem, eventType, listener) {
 }
 
 function detachEvent(elem, eventType) {
-	eventType = getEventName(eventType)
+	eventType = 'on' + eventType
 	if (notBubbleEvents[eventType] === 1) {
 		elem[eventType] = null
 		return
@@ -85,17 +84,6 @@ function detachEvent(elem, eventType) {
 
 	if (eventType === 'onchange' && (nodeName === 'INPUT' || nodeName === 'TEXTAREA')) {
 		delete eventStore['oninput']
-	}
-}
-
-function patchEvent(elem, eventType, listener, oldListener) {
-	if (listener === oldListener) {
-		return
-	}
-	if (oldListener == null) {
-		detachEvent(elem, eventType)
-	} else {
-		attachEvent(elem, eventType, listener)
 	}
 }
 

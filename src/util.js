@@ -1,6 +1,6 @@
 // util
 
-import { matchDirective } from './directive'
+export { attachProps, patchProps } from './directive'
 
 export function isFn(obj) {
     return typeof obj === 'function'
@@ -22,7 +22,6 @@ export function pipe(fn1, fn2) {
 export function flattenMerge(sourceList, targetList) {
     let len = sourceList.length
     let i = -1
-
     while (len--) {
         let item = sourceList[++i]
         if (isArr(item)) {
@@ -50,38 +49,6 @@ export function extend(to, from) {
 let uid = 0
 export function getUid() {
     return ++uid
-}
-
-export function attachProps(elem, props) {
-    for (let propKey in props) {
-        let directive = matchDirective(propKey)
-        if (directive) {
-            let propValue = props[propKey]
-            if (propValue != null) {
-                directive.attach(elem, directive.key, propValue, props)
-            }
-        }
-    }
-}
-
-export function patchProps(elem, props, newProps) {
-    let keyMap = {}
-    let directive = null
-    for (let propKey in props) {
-        keyMap[propKey] = true
-        directive = matchDirective(propKey)
-        if (directive) {
-            directive.patch(elem, directive.key, newProps[propKey], props[propKey], newProps, props)
-        }
-    }
-    for (let propKey in newProps) {
-        if (keyMap[propKey] !== true) {
-            directive = matchDirective(propKey)
-            if (directive) {
-                directive.patch(elem, directive.key, newProps[propKey], props[propKey], newProps, props)
-            }
-        }
-    }
 }
 
 if (!Object.freeze) {

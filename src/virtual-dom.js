@@ -284,7 +284,8 @@ export let clearPendingTextUpdater = () => {
     let i = -1
     while (len--) {
         let node = list[++i]
-        node.nodeValue = node.newText
+        // node.nodeValue = node.newText
+        node.replaceData(0, node.length, node.newText)
     }
     pendingTextUpdater.length = 0
 }

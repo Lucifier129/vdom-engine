@@ -1,4 +1,5 @@
 // placeholder
+import * as _ from './util'
 import { createElement, createFactory, isValidElement } from './createElement'
 import { addDirective, removeDirective } from './directive'
 import { render, destroy } from './render'
@@ -7,11 +8,9 @@ import { styleDirective } from './CSSPropertyOperations'
 import { eventDirective } from './event-system'
 
 addDirective('attr', DOMAttrDirective)
-addDirective('data', DOMAttrDirective)
-addDirective('aria', DOMAttrDirective)
 addDirective('prop', DOMPropDirective)
 addDirective('on', eventDirective)
-addDirective('style', styleDirective)
+addDirective('css', styleDirective)
 
 const Vengine = {
 	createElement,
