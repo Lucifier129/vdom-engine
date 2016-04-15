@@ -1,209 +1,247 @@
 /*!
- * vdom-engine.js v0.1.0
+ * vdom-engine.js v0.1.2
  * (c) 2016 Jade Gu
  * Released under the MIT License.
  */
 'use strict';
 
-var directives = [];
+var directives = {};
+var DIRECTIVE_SPEC = /^([^-]+)-(.+)$/;
 
-function addDirective(directiveConfig) {
-	directives.push(directiveConfig);
+function addDirective(name, methods) {
+    directives[name] = methods;
 }
 
-function removeDirective(directiveConfig) {
-	directives = directives.filter(function (item) {
-		return item !== directiveConfig;
-	});
+function removeDirective(name) {
+    delete directives[name];
 }
 
+var currentName = null;
 function matchDirective(propKey) {
-	for (var i = 0, len = directives.length; i < len; i++) {
-		var directive = directives[i];
-		var test = directive.test;
-		var testType = typeof test;
-		var isMatched = false;
-
-		if (testType === 'string') {
-			// in this case, test is a string check whether equal to propKey or not
-			if (propKey === test) {
-				isMatched = true;
-			}
-		} else if (testType === 'function') {
-			// in this case, test is a custrom test function that return boolean value
-			if (test(propKey)) {
-				isMatched = true;
-			}
-		} else {
-			// in this case, test should be a regexp or obj which has test method and return boolean value
-			isMatched = test.test(propKey);
-		}
-
-		// return the directive by first match
-		if (isMatched) {
-			return directive;
-		}
-	}
+    var matches = propKey.match(DIRECTIVE_SPEC);
+    if (matches) {
+        currentName = matches[2];
+        return directives[matches[1]];
+    }
 }
 
-var PROP_RE = /^prop-(.+)/;
-var ATTR_RE = /^(attr|data|aria)-(.+)/;
-var ATTR_NS_RE = /^attrns-(.+)/; // attribute with namespace
+function attachProp(elem, propKey, propValue) {
+    var directive = matchDirective(propKey);
+    if (directive) {
+        directive.attach(elem, currentName, propValue);
+    }
+}
+
+function detachProp(elem, propKey) {
+    var directive = matchDirective(propKey);
+    if (directive) {
+        directive.detach(elem, currentName);
+    }
+}
+
+function attachProps(elem, props) {
+    for (var propKey in props) {
+        if (props[propKey] != null) {
+            attachProp(elem, propKey, props[propKey]);
+        }
+    }
+}
+
+function patchProps(elem, props, newProps) {
+    var keyMap = {};
+    var directive = null;
+    for (var propKey in props) {
+        keyMap[propKey] = true;
+        patchProp(elem, propKey, newProps[propKey], props[propKey]);
+    }
+    for (var propKey in newProps) {
+        if (keyMap[propKey] !== true) {
+            patchProp(elem, propKey, newProps[propKey], props[propKey]);
+        }
+    }
+}
+
+function patchProp(elem, propKey, propValue, oldPropValue) {
+    if (propValue == oldPropValue) {
+        return;
+    }
+    if (propValue == null) {
+        detachProp(elem, propKey);
+    } else {
+        attachProp(elem, propKey, propValue);
+    }
+}
 
 var DOMPropDirective = {
-	test: PROP_RE,
 	attach: attachDOMProp,
-	detach: detachDOMProp,
-	patch: patchDOMProp
+	detach: detachDOMProp
 };
 
 var DOMAttrDirective = {
-	test: ATTR_RE,
 	attach: attachDOMAttr,
-	detach: detachDOMAttr,
-	patch: patchDOMAttr
+	detach: detachDOMAttr
 };
 
-var DOMAttrNSDirective = {
-	test: ATTR_NS_RE,
-	attach: attachDOMAttrNS,
-	detach: detachDOMAttrNS,
-	patch: patchDOMAttrNS
-};
-
-function attachDOMProp(elem, propKey, propValue) {
-	var propName = getPropName(propKey);
+function attachDOMProp(elem, propName, propValue) {
 	elem[propName] = propValue;
 }
 
-function detachDOMProp(elem, propKey) {
-	var propName = getPropName(propKey);
+function detachDOMProp(elem, propName) {
 	elem[propName] = '';
 }
 
-function patchDOMProp(elem, propKey, propValue, oldPropValue) {
-	if (propValue === oldPropValue) {
+function attachDOMAttr(elem, attrName, attrValue) {
+	elem.setAttribute(attrName, attrValue + '');
+}
+
+function detachDOMAttr(elem, attrName) {
+	elem.removeAttribute(attrName);
+}
+
+var notBubbleEvents = {
+	onmouseleave: 1,
+	onmouseenter: 1,
+	onload: 1,
+	onunload: 1,
+	onscroll: 1,
+	onfocus: 1,
+	onblur: 1,
+	onrowexit: 1,
+	onbeforeunload: 1,
+	onstop: 1,
+	ondragdrop: 1,
+	ondragenter: 1,
+	ondragexit: 1,
+	ondraggesture: 1,
+	ondragover: 1,
+	oncontextmenu: 1
+};
+
+var EVENT_RE = /^on-.+/i;
+
+var eventDirective = {
+	attach: attachEvent,
+	detach: detachEvent
+};
+
+// Mobile Safari does not fire properly bubble click events on
+// non-interactive elements, which means delegated click listeners do not
+// fire. The workaround for this bug involves attaching an empty click
+// listener on the target node.
+var inMobile = ('ontouchstart' in document);
+var emptyFunction = function emptyFunction() {};
+var ON_CLICK_KEY = 'onclick';
+
+function getEventName(key) {
+	return key.replace(/^on-/, 'on').toLowerCase();
+}
+
+var eventTypes = {};
+function attachEvent(elem, eventType, listener) {
+	eventType = 'on' + eventType;
+
+	if (notBubbleEvents[eventType] === 1) {
+		elem[eventType] = listener;
 		return;
 	}
-	if (propValue == null) {
-		detachDOMProp(elem, propKey);
-	} else {
-		attachDOMProp(elem, propKey, propValue);
+
+	var eventStore = elem.eventStore || (elem.eventStore = {});
+	eventStore[eventType] = listener;
+
+	if (!eventTypes[eventType]) {
+		// onclick -> click
+		document.addEventListener(eventType.substr(2), dispatchEvent, false);
+		eventTypes[eventType] = true;
+	}
+
+	if (inMobile && eventType === ON_CLICK_KEY) {
+		elem.addEventListener('click', emptyFunction, false);
+	}
+
+	var nodeName = elem.nodeName;
+
+	if (eventType === 'onchange' && (nodeName === 'INPUT' || nodeName === 'TEXTAREA')) {
+		attachEvent(elem, 'oninput', listener);
 	}
 }
 
-function attachDOMAttr(elem, propKey, propValue) {
-	var attrName = getAttrName(propKey);
-	elem.setAttribute(attrName, propValue);
-}
-
-function detachDOMAttr(elem, propKey) {
-	var attrName = getAttrName(propKey);
-	elem.removeAttribute(attrName, propValue);
-}
-
-function patchDOMAttr(elem, propKey, propValue, oldPropValue) {
-	if (propValue === oldPropValue) {
+function detachEvent(elem, eventType) {
+	eventType = 'on' + eventType;
+	if (notBubbleEvents[eventType] === 1) {
+		elem[eventType] = null;
 		return;
 	}
-	if (propValue == null) {
-		detachDOMAttr(elem, propKey);
-	} else {
-		attachDOMAttr(elem, propKey, propValue);
+
+	var eventStore = elem.eventStore || (elem.eventStore = {});
+	delete eventStore[eventType];
+
+	if (inMobile && eventType === ON_CLICK_KEY) {
+		elem.removeEventListener('click', emptyFunction, false);
+	}
+
+	var nodeName = elem.nodeName;
+
+	if (eventType === 'onchange' && (nodeName === 'INPUT' || nodeName === 'TEXTAREA')) {
+		delete eventStore['oninput'];
 	}
 }
 
-function attachDOMAttrNS(elem, propKey, propValue, props) {
-	var attrName = getAttrNSName(propKey);
-	var namespace = props.namespace;
-	elem.setAttributeNS(namespace, attrName, propValue);
-}
+function dispatchEvent(event) {
+	var target = event.target;
+	var type = event.type;
 
-function detachDOMAttrNS(elem, propKey) {
-	var attrName = getAttrNSName(propKey);
-	elem.removeAttribute(attrName, propValue);
-}
+	var eventType = 'on' + type;
+	var syntheticEvent = null;
+	while (target) {
+		var _target = target;
+		var eventStore = _target.eventStore;
 
-function patchDOMAttrNS(elem, propKey, propValue, oldPropValue, props) {
-	if (propValue === oldPropValue) {
-		return;
+		var listener = eventStore && eventStore[eventType];
+		if (!listener) {
+			target = target.parentNode;
+			continue;
+		}
+		if (!syntheticEvent) {
+			syntheticEvent = createSyntheticEvent(event);
+		}
+		syntheticEvent.currentTarget = target;
+		listener.call(target, syntheticEvent);
+		if (syntheticEvent.$cancalBubble) {
+			break;
+		}
+		target = target.parentNode;
 	}
-	if (propValue == null) {
-		detachDOMAttrNS(elem, propKey);
-	} else {
-		attachDOMAttrNS(elem, propKey, propValue, props);
+}
+
+function createSyntheticEvent(nativeEvent) {
+	var syntheticEvent = {};
+	var cancalBubble = function cancalBubble() {
+		return syntheticEvent.$cancalBubble = true;
+	};
+	syntheticEvent.nativeEvent = nativeEvent;
+	for (var key in nativeEvent) {
+		if (typeof nativeEvent[key] !== 'function') {
+			syntheticEvent[key] = nativeEvent[key];
+		} else if (key === 'stopPropagation' || key === 'stopImmediatePropagation') {
+			syntheticEvent[key] = cancalBubble;
+		} else {
+			syntheticEvent[key] = nativeEvent[key].bind(nativeEvent);
+		}
 	}
-}
-
-function getPropName(propKey) {
-	// 'prop-value'.match(PROP_RE) -> ["prop-value", "value"]
-	return propKey.match(PROP_RE)[1];
-}
-
-function getAttrName(propKey) {
-	// 'attr-id'.match(/^(attr|data|aria)-(.+)/) -> ["attr-id", "attr", "id"]
-	// 'data-id'.match(/^(attr|data|aria)-(.+)/) -> ["data-id", "data", "id"]
-	var result = propKey.match(ATTR_RE);
-	// should return all propKey if it is data-* or aria-*
-	return result[1] === 'attr' ? result[2] : result[0];
-}
-
-function getAttrNSName(propKey) {
-	// 'attrns-test'.match(/^attrns-(.+)/) -> ["attrns-test", "test"]
-	return propKey.match(ATTR_NS_RE)[1];
+	return syntheticEvent;
 }
 
 var styleDirective = {
-    test: 'style',
     attach: attachStyle,
-    detach: detachStyle,
-    patch: patchStyle
+    detach: detachStyle
 };
 
-function attachStyle(elemStyle, styles) {
-    for (var styleName in styles) {
-        if (styles.hasOwnProperty(styleName)) {
-            setStyleValue(elemStyle, styleName, styles[styleName]);
-        }
-    }
+function attachStyle(elem, styleName, styleValue) {
+    setStyleValue(elem.style, styleName, styleValue);
 }
 
-function detachStyle(elemStyle, styles) {
-    for (var styleName in styles) {
-        if (styles.hasOwnProperty(styleName)) {
-            elemStyle[styleName] = '';
-        }
-    }
-}
-
-function patchStyle(elemStyle, style, newStyle) {
-    if (style === newStyle) {
-        return;
-    }
-    if (!newStyle && style) {
-        detachStyle(elemStyle, style);
-        return;
-    } else if (newStyle && !style) {
-        attachStyle(elemStyle, newStyle);
-        return;
-    }
-
-    var keyMap = {};
-    for (var key in style) {
-        if (style.hasOwnProperty(key)) {
-            keyMap[key] = true;
-            if (style[key] !== newStyle[key]) {
-                setStyleValue(elemStyle, key, newStyle[key]);
-            }
-        }
-    }
-    for (var key in newStyle) {
-        if (newStyle.hasOwnProperty(key) && keyMap[key] !== true) {
-            if (style[key] !== newStyle[key]) {
-                setStyleValue(elemStyle, key, newStyle[key]);
-            }
-        }
-    }
+function detachStyle(elem, styleName) {
+    elem.style[styleName] = '';
 }
 
 /**
@@ -279,152 +317,6 @@ function setStyleValue(elemStyle, styleName, styleValue) {
     elemStyle[styleName] = styleValue;
 }
 
-var notBubbleEvents = {
-	onmouseleave: 1,
-	onmouseenter: 1,
-	onload: 1,
-	onunload: 1,
-	onscroll: 1,
-	onfocus: 1,
-	onblur: 1,
-	onrowexit: 1,
-	onbeforeunload: 1,
-	onstop: 1,
-	ondragdrop: 1,
-	ondragenter: 1,
-	ondragexit: 1,
-	ondraggesture: 1,
-	ondragover: 1,
-	oncontextmenu: 1
-};
-
-var EVENT_RE = /^on-.+/i;
-
-var eventDirective = {
-	test: EVENT_RE,
-	attach: attachEvent,
-	detach: detachEvent,
-	patch: patchEvent
-};
-
-// Mobile Safari does not fire properly bubble click events on
-// non-interactive elements, which means delegated click listeners do not
-// fire. The workaround for this bug involves attaching an empty click
-// listener on the target node.
-var inMobile = ('ontouchstart' in document);
-var emptyFunction = function emptyFunction() {};
-var ON_CLICK_KEY = 'onclick';
-
-function getEventName(key) {
-	return key.replace('on-', 'on').toLowerCase();
-}
-
-var eventTypes = {};
-function attachEvent(elem, eventType, listener) {
-	eventType = getEventName(eventType);
-
-	if (notBubbleEvents[eventType] === 1) {
-		elem[eventType] = listener;
-		return;
-	}
-
-	var eventStore = elem.eventStore || (elem.eventStore = {});
-	eventStore[eventType] = listener;
-
-	if (!eventTypes[eventType]) {
-		// onclick -> click
-		document.addEventListener(eventType.substr(2), dispatchEvent, false);
-		eventTypes[eventType] = true;
-	}
-
-	if (inMobile && eventType === ON_CLICK_KEY) {
-		elem.addEventListener('click', emptyFunction, false);
-	}
-
-	var nodeName = elem.nodeName;
-
-	if (eventType === 'onchange' && (nodeName === 'INPUT' || nodeName === 'TEXTAREA')) {
-		attachEvent(elem, 'oninput', listener);
-	}
-}
-
-function detachEvent(elem, eventType) {
-	eventType = getEventName(eventType);
-	if (notBubbleEvents[eventType] === 1) {
-		elem[eventType] = null;
-		return;
-	}
-
-	var eventStore = elem.eventStore || (elem.eventStore = {});
-	delete eventStore[eventType];
-
-	if (inMobile && eventType === ON_CLICK_KEY) {
-		elem.removeEventListener('click', emptyFunction, false);
-	}
-
-	var nodeName = elem.nodeName;
-
-	if (eventType === 'onchange' && (nodeName === 'INPUT' || nodeName === 'TEXTAREA')) {
-		delete eventStore['oninput'];
-	}
-}
-
-function patchEvent(elem, eventType, listener, oldListener) {
-	if (listener === oldListener) {
-		return;
-	}
-	if (oldListener == null) {
-		detachEvent(elem, eventType);
-	} else {
-		attachEvent(elem, eventType, listener);
-	}
-}
-
-function dispatchEvent(event) {
-	var target = event.target;
-	var type = event.type;
-
-	var eventType = 'on' + type;
-	var syntheticEvent = null;
-	while (target) {
-		var _target = target;
-		var eventStore = _target.eventStore;
-
-		var listener = eventStore && eventStore[eventType];
-		if (!listener) {
-			target = target.parentNode;
-			continue;
-		}
-		if (!syntheticEvent) {
-			syntheticEvent = createSyntheticEvent(event);
-		}
-		syntheticEvent.currentTarget = target;
-		listener.call(target, syntheticEvent);
-		if (syntheticEvent.$cancalBubble) {
-			break;
-		}
-		target = target.parentNode;
-	}
-}
-
-function createSyntheticEvent(nativeEvent) {
-	var syntheticEvent = {};
-	var cancalBubble = function cancalBubble() {
-		return syntheticEvent.$cancalBubble = true;
-	};
-	syntheticEvent.nativeEvent = nativeEvent;
-	for (var key in nativeEvent) {
-		if (typeof nativeEvent[key] !== 'function') {
-			syntheticEvent[key] = nativeEvent[key];
-		} else if (key === 'stopPropagation' || key === 'stopImmediatePropagation') {
-			syntheticEvent[key] = cancalBubble;
-		} else {
-			syntheticEvent[key] = nativeEvent[key].bind(nativeEvent);
-		}
-	}
-	return syntheticEvent;
-}
-
 var isArr = Array.isArray;
 
 function identity(obj) {
@@ -441,13 +333,12 @@ function pipe(fn1, fn2) {
 function flattenMerge(sourceList, targetList) {
     var len = sourceList.length;
     var i = -1;
-
     while (len--) {
         var item = sourceList[++i];
         if (isArr(item)) {
             flattenChildren(item, targetList);
         } else if (item != null && typeof item !== 'boolean') {
-            targetList[targetList.length] = item.vtype ? item : '' + item;
+            targetList[targetList.length] = item;
         }
     }
 }
@@ -468,53 +359,6 @@ var uid = 0;
 
 function getUid() {
     return ++uid;
-}
-
-function attachProps(elem, props) {
-    for (var propKey in props) {
-        if (props.hasOwnProperty(propKey)) {
-            attachProp(elem, propKey, props[propKey], props);
-        }
-    }
-}
-
-function patchProps(elem, props, newProps) {
-    var keyMap = {};
-    var directive = null;
-    for (var propKey in props) {
-        if (props.hasOwnProperty(propKey)) {
-            keyMap[propKey] = true;
-            directive = matchDirective(propKey);
-            if (directive) {
-                directive.patch(elem, propKey, newProps[propKey], props[propKey], newProps, props);
-            }
-        }
-    }
-    for (var propKey in newProps) {
-        if (newProps.hasOwnProperty(propKey) && keyMap[propKey] !== true) {
-            directive = matchDirective(propKey);
-            if (directive) {
-                directive.patch(elem, propKey, newProps[propKey], props[propKey], newProps, props);
-            }
-        }
-    }
-}
-
-function attachProp(elem, propKey, propValue, props) {
-    if (propValue == null) {
-        return detachProp(elem, propKey, props);
-    }
-    var directive = matchDirective(propKey);
-    if (directive) {
-        directive.attach(elem, propKey, propValue, props);
-    }
-}
-
-function detachProp(elem, propKey, props) {
-    var directive = matchDirective(propKey);
-    if (directive) {
-        directive.detach(elem, propKey, props);
-    }
 }
 
 if (!Object.freeze) {
@@ -539,7 +383,7 @@ function initVnode(vnode, namespaceURI) {
 
     var node = null;
     if (!vtype) {
-        node = document.createTextNode(vnode);
+        node = document.createTextNode('' + vnode);
     } else if (vtype === VELEMENT) {
         node = initVelem(vnode, namespaceURI);
     } else if (vtype === VCOMPONENT) {
@@ -560,6 +404,21 @@ function destroyVnode(vnode, node) {
     }
 }
 
+function updateVnode(vnode, newVnode, node) {
+    var newNode = node;
+    var vtype = newVnode.vtype;
+    if (!vtype) {
+        // textNode
+        newNode.newText = newVnode + '';
+        pendingTextUpdater[pendingTextUpdater.length] = newNode;
+    } else if (vtype === VELEMENT) {
+        newNode = updateVelem(vnode, newVnode, newNode);
+    } else if (vtype === VCOMPONENT) {
+        newNode = updateVcomponent(vnode, newVnode, newNode);
+    }
+    return newNode;
+}
+
 function initVelem(velem, namespaceURI) {
     var type = velem.type;
     var props = velem.props;
@@ -567,21 +426,27 @@ function initVelem(velem, namespaceURI) {
     var node = null;
 
     if (type === 'svg' || namespaceURI === SVGNamespaceURI) {
-        node = document.createElementNS(SVGNamespaceURI, type);
         namespaceURI = SVGNamespaceURI;
+        node = document.createElementNS(SVGNamespaceURI, type);
     } else {
         node = document.createElement(type);
     }
 
-    var vchildren = props.children;
-
-    for (var i = 0, len = vchildren.length; i < len; i++) {
-        node.appendChild(initVnode(vchildren[i], namespaceURI));
-    }
-
+    initVchildren(node, props.children);
     attachProps(node, props);
 
     return node;
+}
+
+function initVchildren(node, vchildren) {
+    var namespaceURI = node.namespaceURI;
+
+    for (var i = 0, len = vchildren.length; i < len; i++) {
+        var vchild = vchildren[i];
+        var childNode = initVnode(vchildren[i], namespaceURI);
+        childNode.vnode = vchild;
+        node.appendChild(childNode);
+    }
 }
 
 function updateVelem(velem, newVelem, node) {
@@ -590,112 +455,131 @@ function updateVelem(velem, newVelem, node) {
 
     var newProps = newVelem.props;
     var oldHtml = props['prop-innerHTML'];
-    var childNodes = node.childNodes;
-    var namespaceURI = node.namespaceURI;
-
     var vchildren = props.children;
     var newVchildren = newProps.children;
-    var vchildrenLen = vchildren.length;
-    var newVchildrenLen = newVchildren.length;
 
-    if (oldHtml == null && vchildrenLen) {
-        var shouldRemove = null;
-        var patches = Array(newVchildrenLen);
-
-        for (var i = 0; i < vchildrenLen; i++) {
-            var vnode = vchildren[i];
-            for (var j = 0; j < newVchildrenLen; j++) {
-                if (patches[j]) {
-                    continue;
-                }
-                var newVnode = newVchildren[j];
-                if (vnode === newVnode) {
-                    patches[j] = {
-                        vnode: vnode,
-                        node: childNodes[i]
-                    };
-                    vchildren[i] = null;
-                    break;
-                }
-            }
-        }
-
-        outer: for (var i = 0; i < vchildrenLen; i++) {
-            var vnode = vchildren[i];
-            if (vnode === null) {
-                continue;
-            }
-            var _type = vnode.type;
-
-            var key = vnode.key;
-            var childNode = childNodes[i];
-
-            for (var j = 0; j < newVchildrenLen; j++) {
-                if (patches[j]) {
-                    continue;
-                }
-                var newVnode = newVchildren[j];
-                if (newVnode.type === _type && newVnode.key === key) {
-                    patches[j] = {
-                        vnode: vnode,
-                        node: childNode
-                    };
-                    continue outer;
-                }
-            }
-
-            if (!shouldRemove) {
-                shouldRemove = [];
-            }
-            shouldRemove[shouldRemove.length] = childNode;
-            destroyVnode(vnode, childNode);
-        }
-
-        if (shouldRemove) {
-            for (var i = 0, len = shouldRemove.length; i < len; i++) {
-                node.removeChild(shouldRemove[i]);
-            }
-        }
-
-        for (var i = 0; i < newVchildrenLen; i++) {
-            var newVnode = newVchildren[i];
-            var patchItem = patches[i];
-            if (patchItem) {
-                var vnode = patchItem.vnode;
-                var newChildNode = patchItem.node;
-                if (newVnode !== vnode) {
-                    var vtype = newVnode.vtype;
-                    if (!vtype) {
-                        // textNode
-                        newChildNode.newText = newVnode;
-                        pendingTextUpdater[pendingTextUpdater.length] = newChildNode;
-                    } else if (vtype === VELEMENT) {
-                        newChildNode = updateVelem(vnode, newVnode, newChildNode);
-                    } else if (vtype === VCOMPONENT) {
-                        newChildNode = updateVcomponent(vnode, newVnode, newChildNode);
-                    }
-                }
-                var currentNode = childNodes[i];
-                if (currentNode !== newChildNode) {
-                    node.insertBefore(newChildNode, currentNode || null);
-                }
-            } else {
-                var newChildNode = initVnode(newVnode, namespaceURI);
-                node.insertBefore(newChildNode, childNodes[i] || null);
-            }
-        }
+    if (oldHtml == null && vchildren.length) {
+        var patches = diffVchildren(node, vchildren, newVchildren);
+        updateVchildren(node, newVchildren, patches);
+        // collect pending props
         node.props = props;
         node.newProps = newProps;
         pendingPropsUpdater[pendingPropsUpdater.length] = node;
     } else {
         // should patch props first, make sure innerHTML was cleared
         patchProps(node, props, newProps);
-        for (var i = 0; i < newVchildrenLen; i++) {
-            node.appendChild(initVnode(newVchildren[i], namespaceURI));
-        }
+        initVchildren(node, newVchildren);
     }
 
     return node;
+}
+
+function updateVchildren(node, newVchildren, patches) {
+    var newVchildrenLen = newVchildren.length;
+    var childNodes = node.childNodes;
+    var namespaceURI = node.namespaceURI;
+
+    for (var i = 0; i < newVchildrenLen; i++) {
+        var newVnode = newVchildren[i];
+        var patchNode = patches[i];
+        var newChildNode = null;
+        if (patchNode) {
+            var vnode = patchNode.vnode;
+            newChildNode = patchNode;
+            patchNode.vnode = null;
+            if (newVnode !== vnode) {
+                newChildNode = updateVnode(vnode, newVnode, patchNode);
+            }
+            var currentNode = childNodes[i];
+            if (currentNode !== newChildNode) {
+                node.insertBefore(newChildNode, currentNode || null);
+            }
+        } else {
+            newChildNode = initVnode(newVnode, namespaceURI);
+            node.insertBefore(newChildNode, childNodes[i] || null);
+        }
+        newChildNode.vnode = newVnode;
+    }
+}
+
+function diffVchildren(node, vchildren, newVchildren) {
+    var childNodes = node.childNodes;
+
+    var vchildrenLen = vchildren.length;
+    var newVchildrenLen = newVchildren.length;
+
+    // signal of whether vhild has been matched or not
+    var matches = Array(vchildrenLen);
+    var patches = Array(newVchildrenLen);
+    checkEqual(vchildren, newVchildren, childNodes, patches, matches);
+    checkSimilar(vchildren, newVchildren, childNodes, patches, matches);
+    return patches;
+}
+
+function checkEqual(vchildren, newVchildren, childNodes, patches, matches) {
+    var vchildrenLen = vchildren.length;
+    var newVchildrenLen = newVchildren.length;
+    // check equal
+    for (var i = 0; i < vchildrenLen; i++) {
+        var vnode = vchildren[i];
+        for (var j = 0; j < newVchildrenLen; j++) {
+            if (patches[j]) {
+                continue;
+            }
+            var newVnode = newVchildren[j];
+            if (vnode === newVnode) {
+                patches[j] = childNodes[i];
+                matches[i] = true;
+                break;
+            }
+        }
+    }
+}
+
+function checkSimilar(vchildren, newVchildren, childNodes, patches, matches) {
+    var vchildrenLen = vchildren.length;
+    var newVchildrenLen = newVchildren.length;
+    var shouldRemove = null;
+
+    // check similar
+    for (var i = 0; i < vchildrenLen; i++) {
+        if (matches[i]) {
+            continue;
+        }
+        var childNode = childNodes[i];
+        var vnode = vchildren[i];
+        var type = vnode.type;
+        var key = vnode.key;
+
+        var isMatch = false;
+
+        for (var j = 0; j < newVchildrenLen; j++) {
+            if (patches[j]) {
+                continue;
+            }
+            var newVnode = newVchildren[j];
+            if (newVnode.type === type && newVnode.key === key) {
+                patches[j] = childNode;
+                isMatch = true;
+                break;
+            }
+        }
+
+        if (!isMatch) {
+            if (!shouldRemove) {
+                shouldRemove = [];
+            }
+            shouldRemove[shouldRemove.length] = childNode;
+            destroyVnode(vnode, childNode);
+        }
+    }
+
+    if (shouldRemove) {
+        for (var i = 0, len = shouldRemove.length; i < len; i++) {
+            var childNode = shouldRemove[i];
+            childNode.parentNode.removeChild(childNode);
+        }
+    }
 }
 
 function destroyVelem(velem, node) {
@@ -769,9 +653,11 @@ var clearPendingTextUpdater = function clearPendingTextUpdater() {
         return;
     }
     var list = pendingTextUpdater;
-    for (var i = 0; i < len; i++) {
-        var node = list[i];
-        node.nodeValue = node.newText;
+    var i = -1;
+    while (len--) {
+        var node = list[++i];
+        // node.nodeValue = node.newText
+        node.replaceData(0, node.length, node.newText);
     }
     pendingTextUpdater.length = 0;
 };
@@ -783,8 +669,9 @@ var clearPendingPropsUpdater = function clearPendingPropsUpdater() {
         return;
     }
     var list = pendingPropsUpdater;
-    for (var i = 0; i < len; i++) {
-        var node = list[i];
+    var i = -1;
+    while (len--) {
+        var node = list[++i];
         patchProps(node, node.props, node.newProps);
         node.props = node.newProps = null;
     }
@@ -830,11 +717,14 @@ function render(vnode, container, callback) {
 	// should bundle them and render by only one time
 	if (argsCache) {
 		if (argsCache === true) {
-			pendingRendering[id] = argsCache = [vnode, callback];
+			pendingRendering[id] = {
+				vnode: vnode,
+				callback: callback
+			};
 		} else {
-			argsCache[0] = vnode;
+			argsCache.vnode = vnode;
 			if (callback) {
-				argsCache[1] = argsCache[1] ? pipe(argsCache[1], callback) : callback;
+				argsCache.callback = argsCache.callback ? pipe(argsCache.callback, callback) : callback;
 			}
 		}
 		return;
@@ -909,7 +799,7 @@ function createElement(type, props) /* ...children */{
 		var child = arguments[i];
 		if (isArr(child)) {
 			flattenMerge(child, finalChildren);
-		} else {
+		} else if (child != null && typeof child !== 'boolean') {
 			finalChildren[finalChildren.length] = child;
 		}
 	}
@@ -954,11 +844,10 @@ function createFactory(type) {
 	return factory;
 }
 
-addDirective(DOMAttrDirective);
-addDirective(DOMAttrNSDirective);
-addDirective(DOMPropDirective);
-addDirective(styleDirective);
-addDirective(eventDirective);
+addDirective('attr', DOMAttrDirective);
+addDirective('prop', DOMPropDirective);
+addDirective('on', eventDirective);
+addDirective('css', styleDirective);
 
 var Vengine = {
 	createElement: createElement,
