@@ -6,7 +6,8 @@ import {
 	compareTwoVnodes,
 	batchUpdateDOM,
 	clearPendingTextUpdater,
-	clearPendingPropsUpdater
+	clearPendingPropsUpdater,
+	clearPendingMount
 } from './virtual-dom'
 
 let pendingRendering = {}
@@ -52,6 +53,7 @@ export function render(vnode, container, callback) {
 
     clearPendingTextUpdater()
     clearPendingPropsUpdater()
+    clearPendingMount()
 
 	argsCache = pendingRendering[id]
 	delete pendingRendering[id]

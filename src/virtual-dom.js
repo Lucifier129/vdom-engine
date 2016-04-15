@@ -2,7 +2,10 @@ import {
     SVGNamespaceURI,
     VELEMENT,
     VCOMPONENT,
-    VCOMMENT
+    VCOMMENT,
+    HOOK_MOUNT,
+    HOOK_UPDATE,
+    HOOK_UNMOUNT
 } from './constant'
 import {
     EVENT_RE,
@@ -71,6 +74,10 @@ function initVelem(velem, namespaceURI) {
 
     initVchildren(node, props.children)
     _.attachProps(node, props)
+    if (_.isFn(props[HOOK_MOUNT])) {
+        pendingMountHook[pendingMountHook.length] = node
+        node.onmount = props[HOOK_MOUNT]
+    }
 
     return node
 }
@@ -103,6 +110,10 @@ function updateVelem(velem, newVelem, node) {
         // should patch props first, make sure innerHTML was cleared 
         _.patchProps(node, props, newProps)
         initVchildren(node, newVchildren)
+    }
+
+    if (_.isFn(props[HOOK_UPDATE])) {
+        props[HOOK_UPDATE].call(null, node)
     }
 
     return node
@@ -222,6 +233,10 @@ function destroyVelem(velem, node) {
         destroyVnode(vchildren[i], childNodes[i])
     }
 
+    if (_.isFn(props[HOOK_UNMOUNT])) {
+        props[HOOK_UNMOUNT].call(null, node)
+    }
+
     node.eventStore = null
     for (let key in props) {
         if (EVENT_RE.test(key)) {
@@ -272,6 +287,22 @@ function renderVcomponent(vcomponent) {
         throw new Error(`@${factory.name}#render:You may have returned undefined, an array or some other invalid object`)
     }
     return vnode
+}
+
+let pendingMountHook = []
+export let clearPendingMount = () => {
+    let len = pendingMountHook.length
+    if (!len) {
+        return
+    }
+    let list = pendingMountHook
+    let i = -1
+    while (len--) {
+        let node = list[++i]
+        node.onmount.call(null, node)
+        node.onmount = null
+    }
+    pendingMountHook.length = 0
 }
 
 let pendingTextUpdater = []
