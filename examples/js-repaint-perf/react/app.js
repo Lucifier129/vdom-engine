@@ -58,7 +58,7 @@ var DBMon = React.createClass({
   }
 });
 
-React.render(<DBMon />, document.getElementById('dbmon'));
+ReactDOM.render(<DBMon />, document.getElementById('dbmon'));
 
 
 

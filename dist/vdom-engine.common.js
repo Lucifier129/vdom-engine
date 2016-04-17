@@ -1,5 +1,5 @@
 /*!
- * vdom-engine.js v0.1.2
+ * vdom-engine.js v0.1.4
  * (c) 2016 Jade Gu
  * Released under the MIT License.
  */
@@ -317,6 +317,10 @@ function setStyleValue(elemStyle, styleName, styleValue) {
     elemStyle[styleName] = styleValue;
 }
 
+function isFn(obj) {
+    return typeof obj === 'function';
+}
+
 var isArr = Array.isArray;
 
 function identity(obj) {
@@ -370,6 +374,9 @@ var COMPONENT_ID = 'liteid';
 var VELEMENT = 1;
 var VCOMPONENT = 2;
 var VCOMMENT = 3;
+var HOOK_MOUNT = 'hook-mount';
+var HOOK_UPDATE = 'hook-update';
+var HOOK_UNMOUNT = 'hook-unmount';
 
 function createVcomment(comment) {
     return {
@@ -434,6 +441,10 @@ function initVelem(velem, namespaceURI) {
 
     initVchildren(node, props.children);
     attachProps(node, props);
+    if (isFn(props[HOOK_MOUNT])) {
+        pendingMountHook[pendingMountHook.length] = node;
+        node.onmount = props[HOOK_MOUNT];
+    }
 
     return node;
 }
@@ -469,6 +480,10 @@ function updateVelem(velem, newVelem, node) {
         // should patch props first, make sure innerHTML was cleared
         patchProps(node, props, newProps);
         initVchildren(node, newVchildren);
+    }
+
+    if (isFn(props[HOOK_UPDATE])) {
+        props[HOOK_UPDATE].call(null, node);
     }
 
     return node;
@@ -592,6 +607,10 @@ function destroyVelem(velem, node) {
         destroyVnode(vchildren[i], childNodes[i]);
     }
 
+    if (isFn(props[HOOK_UNMOUNT])) {
+        props[HOOK_UNMOUNT].call(null, node);
+    }
+
     node.eventStore = null;
     for (var key in props) {
         if (EVENT_RE.test(key)) {
@@ -645,6 +664,22 @@ function renderVcomponent(vcomponent) {
     }
     return vnode;
 }
+
+var pendingMountHook = [];
+var clearPendingMount = function clearPendingMount() {
+    var len = pendingMountHook.length;
+    if (!len) {
+        return;
+    }
+    var list = pendingMountHook;
+    var i = -1;
+    while (len--) {
+        var node = list[++i];
+        node.onmount.call(null, node);
+        node.onmount = null;
+    }
+    pendingMountHook.length = 0;
+};
 
 var pendingTextUpdater = [];
 var clearPendingTextUpdater = function clearPendingTextUpdater() {
@@ -747,6 +782,7 @@ function render(vnode, container, callback) {
 
 	clearPendingTextUpdater();
 	clearPendingPropsUpdater();
+	clearPendingMount();
 
 	argsCache = pendingRendering[id];
 	delete pendingRendering[id];
