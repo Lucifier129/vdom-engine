@@ -19,13 +19,13 @@ export function pipe(fn1, fn2) {
     }
 }
 
-export function flattenMerge(sourceList, targetList) {
+export function flatten(sourceList, targetList) {
     let len = sourceList.length
     let i = -1
     while (len--) {
         let item = sourceList[++i]
         if (isArr(item)) {
-            flattenChildren(item, targetList)
+            flatten(item, targetList)
         } else if (item != null && typeof item !== 'boolean') {
             targetList[targetList.length] = item
         }

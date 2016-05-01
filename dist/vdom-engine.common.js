@@ -1,5 +1,5 @@
 /*!
- * vdom-engine.js v0.1.4
+ * vdom-engine.js v0.1.5
  * (c) 2016 Jade Gu
  * Released under the MIT License.
  */
@@ -48,27 +48,23 @@ function attachProps(elem, props) {
 }
 
 function patchProps(elem, props, newProps) {
-    var keyMap = {};
-    var directive = null;
     for (var propKey in props) {
-        keyMap[propKey] = true;
-        patchProp(elem, propKey, newProps[propKey], props[propKey]);
-    }
-    for (var propKey in newProps) {
-        if (keyMap[propKey] !== true) {
-            patchProp(elem, propKey, newProps[propKey], props[propKey]);
+        if (newProps.hasOwnProperty(propKey)) {
+            if (newProps[propKey] !== props[propKey]) {
+                if (newProps[propKey] == null) {
+                    detachProp(elem, propKey);
+                } else {
+                    attachProp(elem, propKey, newProps[propKey]);
+                }
+            }
+        } else {
+            detachProp(elem, propKey);
         }
     }
-}
-
-function patchProp(elem, propKey, propValue, oldPropValue) {
-    if (propValue == oldPropValue) {
-        return;
-    }
-    if (propValue == null) {
-        detachProp(elem, propKey);
-    } else {
-        attachProp(elem, propKey, propValue);
+    for (var propKey in newProps) {
+        if (!props.hasOwnProperty(propKey)) {
+            attachProp(elem, propKey, newProps[propKey]);
+        }
     }
 }
 
@@ -117,7 +113,18 @@ var notBubbleEvents = {
 	oncontextmenu: 1
 };
 
-var EVENT_RE = /^on-.+/i;
+function detachEvents(node, props) {
+	node.eventStore = null;
+	for (var key in props) {
+		// key start with 'on-'
+		if (key.indexOf('on-') === 0) {
+			key = getEventName(key);
+			if (notBubbleEvents[key]) {
+				node[key] = null;
+			}
+		}
+	}
+}
 
 var eventDirective = {
 	attach: attachEvent,
@@ -334,13 +341,13 @@ function pipe(fn1, fn2) {
     };
 }
 
-function flattenMerge(sourceList, targetList) {
+function flatten(sourceList, targetList) {
     var len = sourceList.length;
     var i = -1;
     while (len--) {
         var item = sourceList[++i];
         if (isArr(item)) {
-            flattenChildren(item, targetList);
+            flatten(item, targetList);
         } else if (item != null && typeof item !== 'boolean') {
             targetList[targetList.length] = item;
         }
@@ -374,9 +381,11 @@ var COMPONENT_ID = 'liteid';
 var VELEMENT = 1;
 var VCOMPONENT = 2;
 var VCOMMENT = 3;
-var HOOK_MOUNT = 'hook-mount';
-var HOOK_UPDATE = 'hook-update';
-var HOOK_UNMOUNT = 'hook-unmount';
+var HOOK_WILL_MOUNT = 'hook-willMount';
+var HOOK_DID_MOUNT = 'hook-didMount';
+var HOOK_WILL_UPDATE = 'hook-willUpdate';
+var HOOK_DID_UPDATE = 'hook-didUpdate';
+var HOOK_WILL_UNMOUNT = 'hook-willUnmount';
 
 function createVcomment(comment) {
     return {
@@ -441,9 +450,14 @@ function initVelem(velem, namespaceURI) {
 
     initVchildren(node, props.children);
     attachProps(node, props);
-    if (isFn(props[HOOK_MOUNT])) {
+
+    if (props[HOOK_WILL_MOUNT]) {
+        props[HOOK_WILL_MOUNT].apply(null, node);
+    }
+
+    if (props[HOOK_DID_MOUNT]) {
         pendingMountHook[pendingMountHook.length] = node;
-        node.onmount = props[HOOK_MOUNT];
+        node.onmount = props[HOOK_DID_MOUNT];
     }
 
     return node;
@@ -469,6 +483,10 @@ function updateVelem(velem, newVelem, node) {
     var vchildren = props.children;
     var newVchildren = newProps.children;
 
+    if (newProps[HOOK_WILL_UPDATE]) {
+        newProps[HOOK_WILL_UPDATE].call(null, node);
+    }
+
     if (oldHtml == null && vchildren.length) {
         var patches = diffVchildren(node, vchildren, newVchildren);
         updateVchildren(node, newVchildren, patches);
@@ -480,10 +498,9 @@ function updateVelem(velem, newVelem, node) {
         // should patch props first, make sure innerHTML was cleared
         patchProps(node, props, newProps);
         initVchildren(node, newVchildren);
-    }
-
-    if (isFn(props[HOOK_UPDATE])) {
-        props[HOOK_UPDATE].call(null, node);
+        if (newProps[HOOK_DID_UPDATE]) {
+            newProps[HOOK_DID_UPDATE].call(null, node);
+        }
     }
 
     return node;
@@ -607,19 +624,11 @@ function destroyVelem(velem, node) {
         destroyVnode(vchildren[i], childNodes[i]);
     }
 
-    if (isFn(props[HOOK_UNMOUNT])) {
-        props[HOOK_UNMOUNT].call(null, node);
+    if (isFn(props[HOOK_WILL_UNMOUNT])) {
+        props[HOOK_WILL_UNMOUNT].call(null, node);
     }
 
-    node.eventStore = null;
-    for (var key in props) {
-        if (EVENT_RE.test(key)) {
-            key = getEventName(key);
-            if (notBubbleEvents[key] === true) {
-                node[key] = null;
-            }
-        }
-    }
+    detachEvents(node, props);
 }
 
 function initVcomponent(vcomponent, namespaceURI) {
@@ -691,8 +700,8 @@ var clearPendingTextUpdater = function clearPendingTextUpdater() {
     var i = -1;
     while (len--) {
         var node = list[++i];
-        // node.nodeValue = node.newText
-        node.replaceData(0, node.length, node.newText);
+        node.nodeValue = node.newText;
+        // node.replaceData(0, node.length, node.newText)
     }
     pendingTextUpdater.length = 0;
 };
@@ -708,6 +717,9 @@ var clearPendingPropsUpdater = function clearPendingPropsUpdater() {
     while (len--) {
         var node = list[++i];
         patchProps(node, node.props, node.newProps);
+        if (node.newProps[HOOK_DID_UPDATE]) {
+            node.newProps[HOOK_DID_UPDATE].call(null, node);
+        }
         node.props = node.newProps = null;
     }
     pendingPropsUpdater.length = 0;
@@ -766,12 +778,11 @@ function render(vnode, container, callback) {
 	}
 
 	pendingRendering[id] = true;
-	var oldVnode = null;
-	var rootNode = null;
-	if (oldVnode = vnodeStore[id]) {
-		rootNode = compareTwoVnodes(oldVnode, vnode, container.firstChild);
+
+	if (vnodeStore.hasOwnProperty(id)) {
+		compareTwoVnodes(vnodeStore[id], vnode, container.firstChild);
 	} else {
-		rootNode = initVnode(vnode, container.namespaceURI);
+		var rootNode = initVnode(vnode, container.namespaceURI);
 		var childNode = null;
 		while (childNode = container.lastChild) {
 			container.removeChild(childNode);
@@ -785,7 +796,7 @@ function render(vnode, container, callback) {
 	clearPendingMount();
 
 	argsCache = pendingRendering[id];
-	delete pendingRendering[id];
+	pendingRendering[id] = null;
 
 	if (isArr(argsCache)) {
 		renderTreeIntoContainer(argsCache[0], container, argsCache[1]);
@@ -806,6 +817,7 @@ function destroy(container) {
 		destroyVnode(vnode, container.firstChild);
 		container.removeChild(container.firstChild);
 		delete vnodeStore[id];
+		delete pendingRendering[id];
 		return true;
 	}
 	return false;
@@ -834,7 +846,7 @@ function createElement(type, props) /* ...children */{
 	for (var i = 2; i < argsLen; i++) {
 		var child = arguments[i];
 		if (isArr(child)) {
-			flattenMerge(child, finalChildren);
+			flatten(child, finalChildren);
 		} else if (child != null && typeof child !== 'boolean') {
 			finalChildren[finalChildren.length] = child;
 		}

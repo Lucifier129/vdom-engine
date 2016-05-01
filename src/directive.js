@@ -27,11 +27,12 @@ function attachProp(elem, propKey, propValue) {
 }
 
 function detachProp(elem, propKey) {
-	let directive = matchDirective(propKey)
+    let directive = matchDirective(propKey)
     if (directive) {
         directive.detach(elem, currentName)
     }
 }
+
 
 export function attachProps(elem, props) {
     for (let propKey in props) {
@@ -42,26 +43,22 @@ export function attachProps(elem, props) {
 }
 
 export function patchProps(elem, props, newProps) {
-    let keyMap = {}
-    let directive = null
     for (let propKey in props) {
-        keyMap[propKey] = true
-        patchProp(elem, propKey, newProps[propKey], props[propKey])
-    }
-    for (let propKey in newProps) {
-        if (keyMap[propKey] !== true) {
-            patchProp(elem, propKey, newProps[propKey], props[propKey])
+        if (newProps.hasOwnProperty(propKey)) {
+            if (newProps[propKey] !== props[propKey]) {
+                if (newProps[propKey] == null) {
+                    detachProp(elem, propKey)
+                } else {
+                    attachProp(elem, propKey, newProps[propKey])
+                }
+            }
+        } else {
+            detachProp(elem, propKey)
         }
     }
-}
-
-function patchProp(elem, propKey, propValue, oldPropValue) {
-	if (propValue == oldPropValue) {
-		return
-	}
-	if (propValue == null) {
-		detachProp(elem, propKey)
-	} else {
-		attachProp(elem, propKey, propValue)
-	}
+    for (let propKey in newProps) {
+        if (!props.hasOwnProperty(propKey)) {
+            attachProp(elem, propKey, newProps[propKey])
+        }
+    }
 }

@@ -37,12 +37,11 @@ export function render(vnode, container, callback) {
 	}
 
 	pendingRendering[id] = true
-	let oldVnode = null
-	let rootNode = null
-	if (oldVnode = vnodeStore[id]) {
-		rootNode = compareTwoVnodes(oldVnode, vnode, container.firstChild)
+
+	if (vnodeStore.hasOwnProperty(id)) {
+		compareTwoVnodes(vnodeStore[id], vnode, container.firstChild)
 	} else {
-		rootNode = initVnode(vnode, container.namespaceURI)
+		var rootNode = initVnode(vnode, container.namespaceURI)
 		var childNode = null
 		while (childNode = container.lastChild) {
 			container.removeChild(childNode)
@@ -56,7 +55,7 @@ export function render(vnode, container, callback) {
     clearPendingMount()
 
 	argsCache = pendingRendering[id]
-	delete pendingRendering[id]
+	pendingRendering[id] = null
 
 	if (_.isArr(argsCache)) {
 		renderTreeIntoContainer(argsCache[0], container, argsCache[1])
@@ -77,6 +76,7 @@ export function destroy(container) {
 		destroyVnode(vnode, container.firstChild)
 		container.removeChild(container.firstChild)
 		delete vnodeStore[id]
+		delete pendingRendering[id]
 		return true
 	}
 	return false

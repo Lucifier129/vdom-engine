@@ -1,5 +1,5 @@
 // event config
-export const notBubbleEvents = {
+const notBubbleEvents = {
     onmouseleave: 1,
     onmouseenter: 1,
     onload: 1,
@@ -18,7 +18,20 @@ export const notBubbleEvents = {
     oncontextmenu: 1
 }
 
-export const EVENT_RE = /^on-.+/i
+const EVENT_RE = /^on-.+/i
+
+export function detachEvents(node, props) {
+	node.eventStore = null
+    for (let key in props) {
+    	// key start with 'on-'
+        if (key.indexOf('on-') === 0) {
+            key = getEventName(key)
+            if (notBubbleEvents[key]) {
+                node[key] = null
+            }
+        }
+    }
+}
 
 export let eventDirective = {
 	attach: attachEvent,
@@ -33,7 +46,7 @@ let inMobile = 'ontouchstart' in document
 let emptyFunction = () => {}
 let ON_CLICK_KEY = 'onclick'
 
-export function getEventName(key) {
+function getEventName(key) {
 	return key.replace(/^on-/, 'on').toLowerCase()
 }
 

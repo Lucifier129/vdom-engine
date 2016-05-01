@@ -24,7 +24,7 @@ export function createElement(type, props, /* ...children */) {
 	for (let i = 2; i < argsLen; i++) {
 	    let child = arguments[i]
 	    if (_.isArr(child)) {
-	        _.flattenMerge(child, finalChildren)
+	        _.flatten(child, finalChildren)
 	    } else if (child != null && typeof child !== 'boolean') {
 	        finalChildren[finalChildren.length] = child
 	    }

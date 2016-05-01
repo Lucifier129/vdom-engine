@@ -1,18 +1,16 @@
+import { detachEvents } from './event-system'
+import * as _ from './util'
 import {
     SVGNamespaceURI,
     VELEMENT,
     VCOMPONENT,
     VCOMMENT,
-    HOOK_MOUNT,
-    HOOK_UPDATE,
-    HOOK_UNMOUNT
+    HOOK_WILL_MOUNT,
+    HOOK_DID_MOUNT,
+    HOOK_WILL_UPDATE,
+    HOOK_DID_UPDATE,
+    HOOK_WILL_UNMOUNT
 } from './constant'
-import {
-    EVENT_RE,
-    getEventName,
-    notBubbleEvents
-} from './event-system'
-import * as _ from './util'
 
 function createVcomment(comment) {
     return {
@@ -74,9 +72,14 @@ function initVelem(velem, namespaceURI) {
 
     initVchildren(node, props.children)
     _.attachProps(node, props)
-    if (_.isFn(props[HOOK_MOUNT])) {
+
+    if (props[HOOK_WILL_MOUNT]) {
+        props[HOOK_WILL_MOUNT].apply(null, node)
+    }
+
+    if (props[HOOK_DID_MOUNT]) {
         pendingMountHook[pendingMountHook.length] = node
-        node.onmount = props[HOOK_MOUNT]
+        node.onmount = props[HOOK_DID_MOUNT]
     }
 
     return node
@@ -99,6 +102,10 @@ function updateVelem(velem, newVelem, node) {
     let vchildren = props.children
     let newVchildren = newProps.children
 
+    if (newProps[HOOK_WILL_UPDATE]) {
+        newProps[HOOK_WILL_UPDATE].call(null, node)
+    }
+
     if (oldHtml == null && vchildren.length) {
         let patches = diffVchildren(node, vchildren, newVchildren)
         updateVchildren(node, newVchildren, patches)
@@ -110,10 +117,9 @@ function updateVelem(velem, newVelem, node) {
         // should patch props first, make sure innerHTML was cleared 
         _.patchProps(node, props, newProps)
         initVchildren(node, newVchildren)
-    }
-
-    if (_.isFn(props[HOOK_UPDATE])) {
-        props[HOOK_UPDATE].call(null, node)
+        if (newProps[HOOK_DID_UPDATE]) {
+            newProps[HOOK_DID_UPDATE].call(null, node)
+        }
     }
 
     return node
@@ -233,19 +239,11 @@ function destroyVelem(velem, node) {
         destroyVnode(vchildren[i], childNodes[i])
     }
 
-    if (_.isFn(props[HOOK_UNMOUNT])) {
-        props[HOOK_UNMOUNT].call(null, node)
+    if (_.isFn(props[HOOK_WILL_UNMOUNT])) {
+        props[HOOK_WILL_UNMOUNT].call(null, node)
     }
 
-    node.eventStore = null
-    for (let key in props) {
-        if (EVENT_RE.test(key)) {
-            key = getEventName(key)
-            if (notBubbleEvents[key] === true) {
-                node[key] = null
-            }
-        }
-    }
+    detachEvents(node, props)
 }
 
 function initVcomponent(vcomponent, namespaceURI) {
@@ -315,8 +313,8 @@ export let clearPendingTextUpdater = () => {
     let i = -1
     while (len--) {
         let node = list[++i]
-        // node.nodeValue = node.newText
-        node.replaceData(0, node.length, node.newText)
+        node.nodeValue = node.newText
+        // node.replaceData(0, node.length, node.newText)
     }
     pendingTextUpdater.length = 0
 }
@@ -332,6 +330,9 @@ export let clearPendingPropsUpdater = () => {
     while (len--) {
         let node = list[++i]
         _.patchProps(node, node.props, node.newProps)
+        if (node.newProps[HOOK_DID_UPDATE]) {
+            node.newProps[HOOK_DID_UPDATE].call(null, node)
+        }
         node.props = node.newProps = null
     }
     pendingPropsUpdater.length = 0
