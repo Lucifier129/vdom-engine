@@ -4,20 +4,22 @@ import {
 	initVnode,
 	destroyVnode,
 	compareTwoVnodes,
-	batchUpdateDOM,
-	clearPendingTextUpdater,
-	clearPendingPropsUpdater,
 	clearPendingMount
 } from './virtual-dom'
 
 let pendingRendering = {}
 let vnodeStore = {}
-export function render(vnode, container, callback) {
+export function render(vnode, container, context, callback) {
 	if (!vnode.vtype) {
 		throw new Error(`cannot render ${ vnode } to container`)
 	}
 	let id = container[COMPONENT_ID] || (container[COMPONENT_ID] = _.getUid())
 	let argsCache = pendingRendering[id]
+
+	if (_.isFn(context)) {
+		callback = context
+		context = undefined
+	}
 
 	// component lify cycle method maybe call root rendering
 	// should bundle them and render by only one time
@@ -25,10 +27,12 @@ export function render(vnode, container, callback) {
 		if (argsCache === true) {
 			pendingRendering[id] = {
 				vnode: vnode,
+				context: context,
 				callback: callback
 			}
 		} else {
 			argsCache.vnode = vnode
+			argsCache.context = context
 			if (callback) {
 				argsCache.callback = argsCache.callback ? _.pipe(argsCache.callback, callback) : callback
 			}
@@ -39,9 +43,9 @@ export function render(vnode, container, callback) {
 	pendingRendering[id] = true
 
 	if (vnodeStore.hasOwnProperty(id)) {
-		compareTwoVnodes(vnodeStore[id], vnode, container.firstChild)
+		compareTwoVnodes(vnodeStore[id], vnode, container.firstChild, context)
 	} else {
-		var rootNode = initVnode(vnode, container.namespaceURI)
+		var rootNode = initVnode(vnode, context, container.namespaceURI)
 		var childNode = null
 		while (childNode = container.lastChild) {
 			container.removeChild(childNode)
@@ -49,16 +53,13 @@ export function render(vnode, container, callback) {
 		container.appendChild(rootNode)
 	}
 	vnodeStore[id] = vnode
-
-    clearPendingTextUpdater()
-    clearPendingPropsUpdater()
     clearPendingMount()
 
 	argsCache = pendingRendering[id]
 	pendingRendering[id] = null
 
-	if (_.isArr(argsCache)) {
-		renderTreeIntoContainer(argsCache[0], container, argsCache[1])
+	if (typeof argsCache === 'object') {
+		render(argsCache.vnode, container, argsCache.context, argsCache.callback)
 	}
 
 	if (callback) {

@@ -19,15 +19,16 @@ export function pipe(fn1, fn2) {
     }
 }
 
-export function flatten(sourceList, targetList) {
-    let len = sourceList.length
+export function flatEach(list, iteratee, a) {
+    let len = list.length
     let i = -1
+
     while (len--) {
-        let item = sourceList[++i]
+        let item = list[++i]
         if (isArr(item)) {
-            flatten(item, targetList)
-        } else if (item != null && typeof item !== 'boolean') {
-            targetList[targetList.length] = item
+            flatEach(item, iteratee, a)
+        } else {
+            iteratee(item, a)
         }
     }
 }

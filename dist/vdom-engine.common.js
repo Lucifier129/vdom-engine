@@ -1,5 +1,5 @@
 /*!
- * vdom-engine.js v0.1.5
+ * vdom-engine.js v0.1.6
  * (c) 2016 Jade Gu
  * Released under the MIT License.
  */
@@ -8,8 +8,8 @@
 var directives = {};
 var DIRECTIVE_SPEC = /^([^-]+)-(.+)$/;
 
-function addDirective(name, methods) {
-    directives[name] = methods;
+function addDirective(name, configs) {
+    directives[name] = configs;
 }
 
 function removeDirective(name) {
@@ -41,7 +41,7 @@ function detachProp(elem, propKey) {
 
 function attachProps(elem, props) {
     for (var propKey in props) {
-        if (props[propKey] != null) {
+        if (propKey !== 'children' && props[propKey] != null) {
             attachProp(elem, propKey, props[propKey]);
         }
     }
@@ -49,6 +49,9 @@ function attachProps(elem, props) {
 
 function patchProps(elem, props, newProps) {
     for (var propKey in props) {
+        if (propKey === 'children') {
+            continue;
+        }
         if (newProps.hasOwnProperty(propKey)) {
             if (newProps[propKey] !== props[propKey]) {
                 if (newProps[propKey] == null) {
@@ -62,6 +65,9 @@ function patchProps(elem, props, newProps) {
         }
     }
     for (var propKey in newProps) {
+        if (propKey === 'children') {
+            continue;
+        }
         if (!props.hasOwnProperty(propKey)) {
             attachProp(elem, propKey, newProps[propKey]);
         }
@@ -94,6 +100,50 @@ function detachDOMAttr(elem, attrName) {
 	elem.removeAttribute(attrName);
 }
 
+function isFn(obj) {
+    return typeof obj === 'function';
+}
+
+var isArr = Array.isArray;
+
+function noop() {}
+
+function identity(obj) {
+    return obj;
+}
+
+function pipe(fn1, fn2) {
+    return function () {
+        fn1.apply(this, arguments);
+        return fn2.apply(this, arguments);
+    };
+}
+
+function flatEach(list, iteratee, a) {
+    var len = list.length;
+    var i = -1;
+
+    while (len--) {
+        var item = list[++i];
+        if (isArr(item)) {
+            flatEach(item, iteratee, a);
+        } else {
+            iteratee(item, a);
+        }
+    }
+}
+
+var uid = 0;
+
+function getUid() {
+    return ++uid;
+}
+
+if (!Object.freeze) {
+    Object.freeze = identity;
+}
+
+// event config
 var notBubbleEvents = {
 	onmouseleave: 1,
 	onmouseenter: 1,
@@ -226,6 +276,7 @@ function createSyntheticEvent(nativeEvent) {
 		return syntheticEvent.$cancalBubble = true;
 	};
 	syntheticEvent.nativeEvent = nativeEvent;
+	syntheticEvent.persist = noop;
 	for (var key in nativeEvent) {
 		if (typeof nativeEvent[key] !== 'function') {
 			syntheticEvent[key] = nativeEvent[key];
@@ -324,294 +375,304 @@ function setStyleValue(elemStyle, styleName, styleValue) {
     elemStyle[styleName] = styleValue;
 }
 
-function isFn(obj) {
-    return typeof obj === 'function';
-}
-
-var isArr = Array.isArray;
-
-function identity(obj) {
-    return obj;
-}
-
-function pipe(fn1, fn2) {
-    return function () {
-        fn1.apply(this, arguments);
-        return fn2.apply(this, arguments);
-    };
-}
-
-function flatten(sourceList, targetList) {
-    var len = sourceList.length;
-    var i = -1;
-    while (len--) {
-        var item = sourceList[++i];
-        if (isArr(item)) {
-            flatten(item, targetList);
-        } else if (item != null && typeof item !== 'boolean') {
-            targetList[targetList.length] = item;
-        }
-    }
-}
-
-function extend(to, from) {
-    if (!from) {
-        return to;
-    }
-    var keys = Object.keys(from);
-    var i = keys.length;
-    while (i--) {
-        to[keys[i]] = from[keys[i]];
-    }
-    return to;
-}
-
-var uid = 0;
-
-function getUid() {
-    return ++uid;
-}
-
-if (!Object.freeze) {
-    Object.freeze = identity;
-}
-
 var SVGNamespaceURI = 'http://www.w3.org/2000/svg';
 var COMPONENT_ID = 'liteid';
 var VELEMENT = 1;
-var VCOMPONENT = 2;
+var VSTATELESS = 2;
 var VCOMMENT = 3;
+var HTML_KEY = 'prop-innerHTML';
 var HOOK_WILL_MOUNT = 'hook-willMount';
 var HOOK_DID_MOUNT = 'hook-didMount';
 var HOOK_WILL_UPDATE = 'hook-willUpdate';
 var HOOK_DID_UPDATE = 'hook-didUpdate';
 var HOOK_WILL_UNMOUNT = 'hook-willUnmount';
 
-function createVcomment(comment) {
-    return {
-        vtype: VCOMMENT,
-        comment: comment
-    };
-}
-
-function initVnode(vnode, namespaceURI) {
+function initVnode(vnode, context, namespaceURI) {
     var vtype = vnode.vtype;
 
     var node = null;
     if (!vtype) {
-        node = document.createTextNode('' + vnode);
+        // init text
+        node = document.createTextNode(vnode);
     } else if (vtype === VELEMENT) {
-        node = initVelem(vnode, namespaceURI);
-    } else if (vtype === VCOMPONENT) {
-        node = initVcomponent(vnode, namespaceURI);
+        // init element
+        node = initVelem(vnode, context, namespaceURI);
+    } else if (vtype === VSTATELESS) {
+        // init stateless component
+        node = initVstateless(vnode, context, namespaceURI);
     } else if (vtype === VCOMMENT) {
-        node = document.createComment(vnode.comment);
+        // init comment
+        node = document.createComment('react-empty: ' + vnode.uid);
     }
     return node;
 }
+
+function updateVnode(vnode, newVnode, node, context) {
+    var vtype = vnode.vtype;
+
+    if (vtype === VSTATELESS) {
+        return updateVstateless(vnode, newVnode, node, context);
+    }
+
+    // ignore VCOMMENT and other vtypes
+    if (vtype !== VELEMENT) {
+        return node;
+    }
+
+    var oldHtml = vnode.props[HTML_KEY] && vnode.props[HTML_KEY].__html;
+    if (oldHtml != null) {
+        updateVelem(vnode, newVnode, node, context);
+        initVchildren(newVnode, node, context);
+    } else {
+        updateVChildren(vnode, newVnode, node, context);
+        updateVelem(vnode, newVnode, node, context);
+    }
+    return node;
+}
+
+function updateVChildren(vnode, newVnode, node, context) {
+    var patches = {
+        removes: [],
+        updates: [],
+        creates: []
+    };
+    // console.time('diff')
+    diffVchildren(patches, vnode, newVnode, node, context);
+    // console.timeEnd('diff')
+    // console.time('patch')
+    flatEach(patches.removes, applyDestroy);
+    flatEach(patches.updates, applyUpdate);
+    flatEach(patches.creates, applyCreate);
+    // console.timeEnd('patch')
+}
+
+function applyUpdate(data) {
+    if (!data) {
+        return;
+    }
+    var vnode = data.vnode;
+    var newNode = data.node;
+
+    // update
+    if (!data.shouldIgnore) {
+        if (vnode.vtype === VELEMENT) {
+            updateVelem(vnode, data.newVnode, newNode, data.context);
+        } else if (vnode.vtype === VSTATELESS) {
+            newNode = updateVstateless(vnode, data.newVnode, newNode, data.context);
+        } else if (!vnode.vtype) {
+            newNode.replaceData(0, newNode.length, data.newVnode);
+            // newNode.nodeValue = data.newVnode
+        }
+    }
+
+    // re-order
+    var currentNode = newNode.parentNode.childNodes[data.index];
+    if (currentNode !== newNode) {
+        newNode.parentNode.insertBefore(newNode, currentNode);
+    }
+    return newNode;
+}
+
+function applyDestroy(data) {
+    destroyVnode(data.vnode, data.node);
+    data.node.parentNode.removeChild(data.node);
+}
+
+function applyCreate(data) {
+    var node = initVnode(data.vnode, data.context, data.parentNode.namespaceURI);
+    data.parentNode.insertBefore(node, data.parentNode.childNodes[data.index]);
+}
+
+/**
+ * Only vnode which has props.children need to call destroy function
+ * to check whether subTree has component that need to call lify-cycle method and release cache.
+ */
 
 function destroyVnode(vnode, node) {
     var vtype = vnode.vtype;
 
     if (vtype === VELEMENT) {
+        // destroy element
         destroyVelem(vnode, node);
-    } else if (vtype === VCOMPONENT) {
-        destroyVcomponent(vnode, node);
+    } else if (vtype === VSTATELESS) {
+        // destroy stateless component
+        destroyVstateless(vnode, node);
     }
 }
 
-function updateVnode(vnode, newVnode, node) {
-    var newNode = node;
-    var vtype = newVnode.vtype;
-    if (!vtype) {
-        // textNode
-        newNode.newText = newVnode + '';
-        pendingTextUpdater[pendingTextUpdater.length] = newNode;
-    } else if (vtype === VELEMENT) {
-        newNode = updateVelem(vnode, newVnode, newNode);
-    } else if (vtype === VCOMPONENT) {
-        newNode = updateVcomponent(vnode, newVnode, newNode);
-    }
-    return newNode;
-}
-
-function initVelem(velem, namespaceURI) {
+function initVelem(velem, context, namespaceURI) {
     var type = velem.type;
     var props = velem.props;
 
     var node = null;
 
     if (type === 'svg' || namespaceURI === SVGNamespaceURI) {
-        namespaceURI = SVGNamespaceURI;
         node = document.createElementNS(SVGNamespaceURI, type);
+        namespaceURI = SVGNamespaceURI;
     } else {
         node = document.createElement(type);
     }
 
-    initVchildren(node, props.children);
+    initVchildren(node, props.children, context);
     attachProps(node, props);
 
     if (props[HOOK_WILL_MOUNT]) {
-        props[HOOK_WILL_MOUNT].apply(null, node);
+        props[HOOK_WILL_MOUNT].call(null, node, props);
     }
 
     if (props[HOOK_DID_MOUNT]) {
-        pendingMountHook[pendingMountHook.length] = node;
-        node.onmount = props[HOOK_DID_MOUNT];
+        pendingMountHook[pendingMountHook.length] = function () {
+            props[HOOK_DID_MOUNT].call(null, node, props);
+        };
     }
 
     return node;
 }
 
-function initVchildren(node, vchildren) {
+function initVchildren(node, vchildren, context) {
     var namespaceURI = node.namespaceURI;
 
     for (var i = 0, len = vchildren.length; i < len; i++) {
-        var vchild = vchildren[i];
-        var childNode = initVnode(vchildren[i], namespaceURI);
-        childNode.vnode = vchild;
-        node.appendChild(childNode);
+        node.appendChild(initVnode(vchildren[i], namespaceURI, context));
     }
+}
+
+function diffVchildren(patches, vnode, newVnode, node, context) {
+    var childNodes = node.childNodes;
+
+    var vchildren = vnode.props.children;
+    var newVchildren = newVnode.props.children;
+    var vchildrenLen = vchildren.length;
+    var newVchildrenLen = newVchildren.length;
+
+    if (vchildrenLen === 0) {
+        if (newVchildrenLen > 0) {
+            for (var i = 0; i < newVchildrenLen; i++) {
+                patches.creates.push({
+                    vnode: newVchildren[i],
+                    parentNode: node,
+                    context: context,
+                    index: i
+                });
+            }
+        }
+        return;
+    } else if (newVchildrenLen === 0) {
+        for (var i = 0; i < vchildrenLen; i++) {
+            patches.removes.push({
+                vnode: vchildren[i],
+                node: childNodes[i]
+            });
+        }
+        return;
+    }
+
+    var updates = Array(newVchildrenLen);
+    var removes = null;
+    var creates = null;
+
+    // isEqual
+    for (var i = 0; i < vchildrenLen; i++) {
+        var _vnode = vchildren[i];
+        for (var j = 0; j < newVchildrenLen; j++) {
+            if (updates[j]) {
+                continue;
+            }
+            var _newVnode = newVchildren[j];
+            if (_vnode === _newVnode) {
+                var shouldIgnore = true;
+                if (context) {
+                    if (_vnode.vtype === VSTATELESS) {
+                        if (_vnode.type.length > 1) {
+                            shouldIgnore = false;
+                        }
+                    }
+                }
+                updates[j] = {
+                    shouldIgnore: shouldIgnore,
+                    vnode: _vnode,
+                    newVnode: _newVnode,
+                    node: childNodes[i],
+                    context: context,
+                    index: j
+                };
+                vchildren[i] = null;
+                break;
+            }
+        }
+    }
+
+    // isSimilar
+    for (var i = 0; i < vchildrenLen; i++) {
+        var _vnode2 = vchildren[i];
+        if (_vnode2 === null) {
+            continue;
+        }
+        var shouldRemove = true;
+        for (var j = 0; j < newVchildrenLen; j++) {
+            if (updates[j]) {
+                continue;
+            }
+            var _newVnode2 = newVchildren[j];
+            if (_newVnode2.type === _vnode2.type && _newVnode2.key === _vnode2.key) {
+                updates[j] = {
+                    vnode: _vnode2,
+                    newVnode: _newVnode2,
+                    node: childNodes[i],
+                    context: context,
+                    index: j
+                };
+                shouldRemove = false;
+                break;
+            }
+        }
+        if (shouldRemove) {
+            if (!removes) {
+                removes = [];
+            }
+            removes.push({
+                vnode: _vnode2,
+                node: childNodes[i]
+            });
+        }
+    }
+
+    for (var i = 0; i < newVchildrenLen; i++) {
+        var item = updates[i];
+        if (!item) {
+            if (!creates) {
+                creates = [];
+            }
+            creates.push({
+                vnode: newVchildren[i],
+                parentNode: node,
+                context: context,
+                index: i
+            });
+        } else if (item.vnode.vtype === VELEMENT) {
+            diffVchildren(patches, item.vnode, item.newVnode, item.node, item.context);
+        }
+    }
+
+    if (removes) {
+        patches.removes.push(removes);
+    }
+    if (creates) {
+        patches.creates.push(creates);
+    }
+    patches.updates.push(updates);
 }
 
 function updateVelem(velem, newVelem, node) {
-    var props = velem.props;
-    var type = velem.type;
-
     var newProps = newVelem.props;
-    var oldHtml = props['prop-innerHTML'];
-    var vchildren = props.children;
-    var newVchildren = newProps.children;
-
     if (newProps[HOOK_WILL_UPDATE]) {
-        newProps[HOOK_WILL_UPDATE].call(null, node);
+        newProps[HOOK_WILL_UPDATE].call(null, node, newProps);
     }
-
-    if (oldHtml == null && vchildren.length) {
-        var patches = diffVchildren(node, vchildren, newVchildren);
-        updateVchildren(node, newVchildren, patches);
-        // collect pending props
-        node.props = props;
-        node.newProps = newProps;
-        pendingPropsUpdater[pendingPropsUpdater.length] = node;
-    } else {
-        // should patch props first, make sure innerHTML was cleared
-        patchProps(node, props, newProps);
-        initVchildren(node, newVchildren);
-        if (newProps[HOOK_DID_UPDATE]) {
-            newProps[HOOK_DID_UPDATE].call(null, node);
-        }
+    patchProps(node, velem.props, newProps);
+    if (newProps[HOOK_DID_UPDATE]) {
+        newProps[HOOK_DID_UPDATE].call(null, node, newProps);
     }
-
     return node;
-}
-
-function updateVchildren(node, newVchildren, patches) {
-    var newVchildrenLen = newVchildren.length;
-    var childNodes = node.childNodes;
-    var namespaceURI = node.namespaceURI;
-
-    for (var i = 0; i < newVchildrenLen; i++) {
-        var newVnode = newVchildren[i];
-        var patchNode = patches[i];
-        var newChildNode = null;
-        if (patchNode) {
-            var vnode = patchNode.vnode;
-            newChildNode = patchNode;
-            patchNode.vnode = null;
-            if (newVnode !== vnode) {
-                newChildNode = updateVnode(vnode, newVnode, patchNode);
-            }
-            var currentNode = childNodes[i];
-            if (currentNode !== newChildNode) {
-                node.insertBefore(newChildNode, currentNode || null);
-            }
-        } else {
-            newChildNode = initVnode(newVnode, namespaceURI);
-            node.insertBefore(newChildNode, childNodes[i] || null);
-        }
-        newChildNode.vnode = newVnode;
-    }
-}
-
-function diffVchildren(node, vchildren, newVchildren) {
-    var childNodes = node.childNodes;
-
-    var vchildrenLen = vchildren.length;
-    var newVchildrenLen = newVchildren.length;
-
-    // signal of whether vhild has been matched or not
-    var matches = Array(vchildrenLen);
-    var patches = Array(newVchildrenLen);
-    checkEqual(vchildren, newVchildren, childNodes, patches, matches);
-    checkSimilar(vchildren, newVchildren, childNodes, patches, matches);
-    return patches;
-}
-
-function checkEqual(vchildren, newVchildren, childNodes, patches, matches) {
-    var vchildrenLen = vchildren.length;
-    var newVchildrenLen = newVchildren.length;
-    // check equal
-    for (var i = 0; i < vchildrenLen; i++) {
-        var vnode = vchildren[i];
-        for (var j = 0; j < newVchildrenLen; j++) {
-            if (patches[j]) {
-                continue;
-            }
-            var newVnode = newVchildren[j];
-            if (vnode === newVnode) {
-                patches[j] = childNodes[i];
-                matches[i] = true;
-                break;
-            }
-        }
-    }
-}
-
-function checkSimilar(vchildren, newVchildren, childNodes, patches, matches) {
-    var vchildrenLen = vchildren.length;
-    var newVchildrenLen = newVchildren.length;
-    var shouldRemove = null;
-
-    // check similar
-    for (var i = 0; i < vchildrenLen; i++) {
-        if (matches[i]) {
-            continue;
-        }
-        var childNode = childNodes[i];
-        var vnode = vchildren[i];
-        var type = vnode.type;
-        var key = vnode.key;
-
-        var isMatch = false;
-
-        for (var j = 0; j < newVchildrenLen; j++) {
-            if (patches[j]) {
-                continue;
-            }
-            var newVnode = newVchildren[j];
-            if (newVnode.type === type && newVnode.key === key) {
-                patches[j] = childNode;
-                isMatch = true;
-                break;
-            }
-        }
-
-        if (!isMatch) {
-            if (!shouldRemove) {
-                shouldRemove = [];
-            }
-            shouldRemove[shouldRemove.length] = childNode;
-            destroyVnode(vnode, childNode);
-        }
-    }
-
-    if (shouldRemove) {
-        for (var i = 0, len = shouldRemove.length; i < len; i++) {
-            var childNode = shouldRemove[i];
-            childNode.parentNode.removeChild(childNode);
-        }
-    }
 }
 
 function destroyVelem(velem, node) {
@@ -625,49 +686,54 @@ function destroyVelem(velem, node) {
     }
 
     if (isFn(props[HOOK_WILL_UNMOUNT])) {
-        props[HOOK_WILL_UNMOUNT].call(null, node);
+        props[HOOK_WILL_UNMOUNT].call(null, node, props);
     }
 
     detachEvents(node, props);
 }
 
-function initVcomponent(vcomponent, namespaceURI) {
-    var vnode = renderVcomponent(vcomponent);
-    var node = initVnode(vnode, namespaceURI);
+function initVstateless(vstateless, context, namespaceURI) {
+    var vnode = renderVstateless(vstateless, context);
+    var node = initVnode(vnode, context, namespaceURI);
     node.cache = node.cache || {};
-    node.cache[vcomponent.id] = vnode;
+    node.cache[vstateless.uid] = vnode;
     return node;
 }
-function updateVcomponent(vcomponent, newVcomponent, node) {
-    var id = vcomponent.id;
-    var vnode = node.cache[id];
-    delete node.cache[id];
-    var newVnode = renderVcomponent(newVcomponent);
-    var newNode = compareTwoVnodes(vnode, newVnode, node);
+
+function updateVstateless(vstateless, newVstateless, node, context) {
+    var uid = vstateless.uid;
+    var vnode = node.cache[uid];
+    delete node.cache[uid];
+    var newVnode = renderVstateless(newVstateless, context);
+    var newNode = compareTwoVnodes(vnode, newVnode, node, context);
     newNode.cache = newNode.cache || {};
-    newNode.cache[newVcomponent.id] = newVnode;
+    newNode.cache[newVstateless.uid] = newVnode;
     if (newNode !== node) {
-        extend(newNode.cache, node.cache);
+        syncCache(newNode.cache, node.cache, newNode);
     }
     return newNode;
 }
-function destroyVcomponent(vcomponent, node) {
-    var id = vcomponent.id;
-    var vnode = node.cache[id];
-    delete node.cache[id];
+
+function destroyVstateless(vstateless, node) {
+    var uid = vstateless.uid;
+    var vnode = node.cache[uid];
+    delete node.cache[uid];
     destroyVnode(vnode, node);
 }
 
-function renderVcomponent(vcomponent) {
-    var factory = vcomponent.type;
-    var props = vcomponent.props;
+function renderVstateless(vstateless, context) {
+    var factory = vstateless.type;
+    var props = vstateless.props;
 
-    var vnode = factory(props);
+    var vnode = factory(props, context);
     if (vnode && vnode.render) {
         vnode = vnode.render();
     }
     if (vnode === null || vnode === false) {
-        vnode = createVcomment('component placeholder: ' + getUid());
+        vnode = {
+            vtype: VCOMMENT,
+            uid: getUid()
+        };
     } else if (!vnode || !vnode.vtype) {
         throw new Error('@' + factory.name + '#render:You may have returned undefined, an array or some other invalid object');
     }
@@ -690,75 +756,52 @@ var clearPendingMount = function clearPendingMount() {
     pendingMountHook.length = 0;
 };
 
-var pendingTextUpdater = [];
-var clearPendingTextUpdater = function clearPendingTextUpdater() {
-    var len = pendingTextUpdater.length;
-    if (!len) {
-        return;
-    }
-    var list = pendingTextUpdater;
-    var i = -1;
-    while (len--) {
-        var node = list[++i];
-        node.nodeValue = node.newText;
-        // node.replaceData(0, node.length, node.newText)
-    }
-    pendingTextUpdater.length = 0;
-};
-
-var pendingPropsUpdater = [];
-var clearPendingPropsUpdater = function clearPendingPropsUpdater() {
-    var len = pendingPropsUpdater.length;
-    if (!len) {
-        return;
-    }
-    var list = pendingPropsUpdater;
-    var i = -1;
-    while (len--) {
-        var node = list[++i];
-        patchProps(node, node.props, node.newProps);
-        if (node.newProps[HOOK_DID_UPDATE]) {
-            node.newProps[HOOK_DID_UPDATE].call(null, node);
-        }
-        node.props = node.newProps = null;
-    }
-    pendingPropsUpdater.length = 0;
-};
-
-function compareTwoVnodes(vnode, newVnode, node) {
+function compareTwoVnodes(vnode, newVnode, node, context) {
     var newNode = node;
-
     if (newVnode == null) {
         // remove
         destroyVnode(vnode, node);
         node.parentNode.removeChild(node);
-    } else if (vnode.type !== newVnode.type || newVnode.key !== vnode.key) {
+    } else if (vnode.type !== newVnode.type || vnode.key !== newVnode.key) {
         // replace
         destroyVnode(vnode, node);
-        newNode = initVnode(newVnode, node.namespaceURI);
+        newNode = initVnode(newVnode, context, node.namespaceURI);
         node.parentNode.replaceChild(newNode, node);
-    } else if (vnode !== newVnode) {
+    } else if (vnode !== newVnode || context) {
         // same type and same key -> update
-        var vtype = vnode.vtype;
-        if (vtype === VELEMENT) {
-            newNode = updateVelem(vnode, newVnode, node);
-        } else if (vtype === VCOMPONENT) {
-            newNode = updateVcomponent(vnode, newVnode, node);
+        newNode = updateVnode(vnode, newVnode, node, context);
+    }
+    return newNode;
+}
+
+function syncCache(cache, oldCache, node) {
+    for (var key in oldCache) {
+        if (!oldCache.hasOwnProperty(key)) {
+            continue;
+        }
+        var value = oldCache[key];
+        cache[key] = value;
+        // is component, update component.$cache.node
+        if (value.forceUpdate) {
+            value.$cache.node = node;
         }
     }
-
-    return newNode;
 }
 
 var pendingRendering = {};
 var vnodeStore = {};
 
-function render(vnode, container, callback) {
+function render(vnode, container, context, callback) {
 	if (!vnode.vtype) {
 		throw new Error('cannot render ' + vnode + ' to container');
 	}
 	var id = container[COMPONENT_ID] || (container[COMPONENT_ID] = getUid());
 	var argsCache = pendingRendering[id];
+
+	if (isFn(context)) {
+		callback = context;
+		context = undefined;
+	}
 
 	// component lify cycle method maybe call root rendering
 	// should bundle them and render by only one time
@@ -766,10 +809,12 @@ function render(vnode, container, callback) {
 		if (argsCache === true) {
 			pendingRendering[id] = {
 				vnode: vnode,
+				context: context,
 				callback: callback
 			};
 		} else {
 			argsCache.vnode = vnode;
+			argsCache.context = context;
 			if (callback) {
 				argsCache.callback = argsCache.callback ? pipe(argsCache.callback, callback) : callback;
 			}
@@ -780,9 +825,9 @@ function render(vnode, container, callback) {
 	pendingRendering[id] = true;
 
 	if (vnodeStore.hasOwnProperty(id)) {
-		compareTwoVnodes(vnodeStore[id], vnode, container.firstChild);
+		compareTwoVnodes(vnodeStore[id], vnode, container.firstChild, context);
 	} else {
-		var rootNode = initVnode(vnode, container.namespaceURI);
+		var rootNode = initVnode(vnode, context, container.namespaceURI);
 		var childNode = null;
 		while (childNode = container.lastChild) {
 			container.removeChild(childNode);
@@ -790,16 +835,13 @@ function render(vnode, container, callback) {
 		container.appendChild(rootNode);
 	}
 	vnodeStore[id] = vnode;
-
-	clearPendingTextUpdater();
-	clearPendingPropsUpdater();
 	clearPendingMount();
 
 	argsCache = pendingRendering[id];
 	pendingRendering[id] = null;
 
-	if (isArr(argsCache)) {
-		renderTreeIntoContainer(argsCache[0], container, argsCache[1]);
+	if (typeof argsCache === 'object') {
+		render(argsCache.vnode, container, argsCache.context, argsCache.callback);
 	}
 
 	if (callback) {
@@ -825,9 +867,16 @@ function destroy(container) {
 
 function createElement(type, props) /* ...children */{
 	var finalProps = {};
+	var key = null;
 	if (props != null) {
 		for (var propKey in props) {
-			finalProps[propKey] = props[propKey];
+			if (propKey === 'key') {
+				if (props.key !== undefined) {
+					key = '' + props.key;
+				}
+			} else {
+				finalProps[propKey] = props[propKey];
+			}
 		}
 	}
 
@@ -846,31 +895,31 @@ function createElement(type, props) /* ...children */{
 	for (var i = 2; i < argsLen; i++) {
 		var child = arguments[i];
 		if (isArr(child)) {
-			flatten(child, finalChildren);
-		} else if (child != null && typeof child !== 'boolean') {
-			finalChildren[finalChildren.length] = child;
+			flatEach(child, collectChild, finalChildren);
+		} else {
+			collectChild(child, finalChildren);
 		}
 	}
 
 	finalProps.children = finalChildren;
 
-	var vnode = null;
-	var varType = typeof type;
-	if (varType === 'string') {
-		vnode = {
-			vtype: VELEMENT,
-			type: type,
-			props: finalProps
-		};
-	} else if (varType === 'function') {
-		vnode = {
-			id: getUid(),
-			vtype: VCOMPONENT,
-			type: type,
-			props: finalProps
-		};
+	var vtype = null;
+	if (typeof type === 'string') {
+		vtype = VELEMENT;
+	} else if (typeof type === 'function') {
+		vtype = VSTATELESS;
 	} else {
 		throw new Error('unexpect type [ ' + type + ' ]');
+	}
+
+	var vnode = {
+		vtype: vtype,
+		type: type,
+		props: finalProps,
+		key: key
+	};
+	if (vtype === VSTATELESS) {
+		vnode.uid = getUid();
 	}
 
 	return vnode;
@@ -890,6 +939,12 @@ function createFactory(type) {
 	};
 	factory.type = type;
 	return factory;
+}
+
+function collectChild(child, children) {
+	if (child != null && typeof child !== 'boolean') {
+		children[children.length] = child.vtype ? child : '' + child;
+	}
 }
 
 addDirective('attr', DOMAttrDirective);

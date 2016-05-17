@@ -1,11 +1,18 @@
-import { VELEMENT, VCOMPONENT } from './constant'
+import { VELEMENT, VSTATELESS } from './constant'
 import * as _ from './util'
 
 export function createElement(type, props, /* ...children */) {
 	let finalProps = {}
+	let key = null
 	if (props != null) {
 		for (let propKey in props) {
-			finalProps[propKey] = props[propKey]
+			if (propKey === 'key') {
+				if (props.key !== undefined) {
+					key = '' + props.key
+				}
+			} else {
+				finalProps[propKey] = props[propKey]
+			}
 		}
 	}
 
@@ -24,32 +31,32 @@ export function createElement(type, props, /* ...children */) {
 	for (let i = 2; i < argsLen; i++) {
 	    let child = arguments[i]
 	    if (_.isArr(child)) {
-	        _.flatten(child, finalChildren)
-	    } else if (child != null && typeof child !== 'boolean') {
-	        finalChildren[finalChildren.length] = child
+	        _.flatEach(child, collectChild, finalChildren)
+	    } else {
+	    	collectChild(child, finalChildren)
 	    }
 	}
 
 	finalProps.children = finalChildren
 
-	let vnode = null
-	let varType = typeof type
-	if (varType === 'string') {
-		vnode = {
-			vtype: VELEMENT,
-			type: type,
-			props: finalProps
-		}
-	} else if (varType === 'function') {
-		vnode = {
-			id: _.getUid(),
-			vtype: VCOMPONENT,
-			type: type,
-			props: finalProps
-		}
+	let vtype = null
+	if (typeof type === 'string') {
+		vtype = VELEMENT
+	} else if (typeof type === 'function') {
+		vtype = VSTATELESS
 	} else {
 		throw new Error(`unexpect type [ ${type} ]`)
 	}
+
+	let vnode = {
+        vtype: vtype,
+        type: type,
+        props: finalProps,
+        key: key,
+    }
+    if (vtype === VSTATELESS) {
+        vnode.uid = _.getUid()
+    }
 
 	return vnode
 }
@@ -62,4 +69,10 @@ export function createFactory(type) {
 	let factory = (...args) => createElement(type, ...args)
 	factory.type = type
 	return factory
+}
+
+function collectChild(child, children) {
+    if (child != null && typeof child !== 'boolean') {
+        children[children.length] = child.vtype ? child : '' + child
+    }
 }

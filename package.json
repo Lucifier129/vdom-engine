@@ -1,6 +1,6 @@
 {
   "name": "vdom-engine",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "virtual-dom engine that help everyone build their own modern view library and user interfaces",
   "main": "dist/vdom-engine.common.js",
   "jsnext:main": "src/index.js",

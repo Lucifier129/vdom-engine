@@ -1,3 +1,4 @@
+import * as _ from './util'
 // event config
 const notBubbleEvents = {
     onmouseleave: 1,
@@ -17,8 +18,6 @@ const notBubbleEvents = {
     ondragover: 1,
     oncontextmenu: 1
 }
-
-const EVENT_RE = /^on-.+/i
 
 export function detachEvents(node, props) {
 	node.eventStore = null
@@ -127,6 +126,7 @@ function createSyntheticEvent(nativeEvent) {
     let syntheticEvent = {}
     let cancalBubble = () => syntheticEvent.$cancalBubble = true
     syntheticEvent.nativeEvent = nativeEvent
+    syntheticEvent.persist = _.noop
     for (let key in nativeEvent) {
     	if (typeof nativeEvent[key] !== 'function') {
     		syntheticEvent[key] = nativeEvent[key]

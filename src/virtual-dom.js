@@ -3,8 +3,9 @@ import * as _ from './util'
 import {
     SVGNamespaceURI,
     VELEMENT,
-    VCOMPONENT,
+    VSTATELESS,
     VCOMMENT,
+    HTML_KEY,
     HOOK_WILL_MOUNT,
     HOOK_DID_MOUNT,
     HOOK_WILL_UPDATE,
@@ -12,223 +13,286 @@ import {
     HOOK_WILL_UNMOUNT
 } from './constant'
 
-function createVcomment(comment) {
-    return {
-        vtype: VCOMMENT,
-        comment: comment
-    }
-}
-
-export function initVnode(vnode, namespaceURI) {
+export function initVnode(vnode, context, namespaceURI) {
     let { vtype } = vnode
     let node = null
-    if (!vtype) {
-        node = document.createTextNode('' + vnode)
-    } else if (vtype === VELEMENT) {
-        node = initVelem(vnode, namespaceURI)
-    } else if (vtype === VCOMPONENT) {
-        node = initVcomponent(vnode, namespaceURI)
-    } else if (vtype === VCOMMENT) {
-        node = document.createComment(vnode.comment)
+    if (!vtype) { // init text
+        node = document.createTextNode(vnode)
+    } else if (vtype === VELEMENT) { // init element
+        node = initVelem(vnode, context, namespaceURI)
+    } else if (vtype === VSTATELESS) { // init stateless component
+        node = initVstateless(vnode, context, namespaceURI)
+    } else if (vtype === VCOMMENT) { // init comment
+        node = document.createComment(`react-empty: ${ vnode.uid }`)
     }
     return node
 }
 
-export function destroyVnode(vnode, node) {
+function updateVnode(vnode, newVnode, node, context) {
     let { vtype } = vnode
 
-    if (vtype === VELEMENT) {
-        destroyVelem(vnode, node)
-    } else if (vtype === VCOMPONENT) {
-        destroyVcomponent(vnode, node)
+    if (vtype === VSTATELESS) {
+        return updateVstateless(vnode, newVnode, node, context)
     }
+
+    // ignore VCOMMENT and other vtypes
+    if (vtype !== VELEMENT) {
+        return node
+    }
+
+    let oldHtml = vnode.props[HTML_KEY] && vnode.props[HTML_KEY].__html
+    if (oldHtml != null) {
+        updateVelem(vnode, newVnode, node, context)
+        initVchildren(newVnode, node, context)
+    } else {
+        updateVChildren(vnode, newVnode, node, context)
+        updateVelem(vnode, newVnode, node, context)
+    }
+    return node
 }
 
-function updateVnode(vnode, newVnode, node) {
-    let newNode = node
-    let vtype = newVnode.vtype
-    if (!vtype) { // textNode
-        newNode.newText = newVnode + ''
-        pendingTextUpdater[pendingTextUpdater.length] = newNode
-    } else if (vtype === VELEMENT) {
-        newNode = updateVelem(vnode, newVnode, newNode)
-    } else if (vtype === VCOMPONENT) {
-        newNode = updateVcomponent(vnode, newVnode, newNode)
+function updateVChildren(vnode, newVnode, node, context) {
+    let patches = {
+        removes: [],
+        updates: [],
+        creates: [],
+    }
+    // console.time('diff')
+    diffVchildren(patches, vnode, newVnode, node, context)
+    // console.timeEnd('diff')
+    // console.time('patch')
+    _.flatEach(patches.removes, applyDestroy)
+    _.flatEach(patches.updates, applyUpdate)
+    _.flatEach(patches.creates, applyCreate)
+    // console.timeEnd('patch')
+}
+
+function applyUpdate(data) {
+    if (!data) {
+        return
+    }
+    let vnode = data.vnode
+    let newNode = data.node
+
+    // update
+    if (!data.shouldIgnore) {
+        if (vnode.vtype === VELEMENT) {
+            updateVelem(vnode, data.newVnode, newNode, data.context)
+        } else if (vnode.vtype === VSTATELESS) {
+            newNode = updateVstateless(vnode, data.newVnode, newNode, data.context)
+        } else if (!vnode.vtype) {
+            newNode.replaceData(0, newNode.length, data.newVnode)
+            // newNode.nodeValue = data.newVnode
+        }
+    }
+
+    // re-order
+    let currentNode = newNode.parentNode.childNodes[data.index]
+    if (currentNode !== newNode) {
+        newNode.parentNode.insertBefore(newNode, currentNode)
     }
     return newNode
 }
 
 
-function initVelem(velem, namespaceURI) {
+function applyDestroy(data) {
+    destroyVnode(data.vnode, data.node)
+    data.node.parentNode.removeChild(data.node)
+}
+
+function applyCreate(data) {
+    let node = initVnode(data.vnode, data.context, data.parentNode.namespaceURI)
+    data.parentNode.insertBefore(node, data.parentNode.childNodes[data.index])
+}
+
+
+/**
+ * Only vnode which has props.children need to call destroy function
+ * to check whether subTree has component that need to call lify-cycle method and release cache.
+ */
+export function destroyVnode(vnode, node) {
+    let { vtype } = vnode
+    if (vtype === VELEMENT) { // destroy element
+        destroyVelem(vnode, node)
+    } else if (vtype === VSTATELESS) { // destroy stateless component
+        destroyVstateless(vnode, node)
+    }
+}
+
+function initVelem(velem, context, namespaceURI) {
     let { type, props } = velem
     let node = null
-    
+
     if (type === 'svg' || namespaceURI === SVGNamespaceURI) {
-        namespaceURI = SVGNamespaceURI
         node = document.createElementNS(SVGNamespaceURI, type)
+        namespaceURI = SVGNamespaceURI
     } else {
         node = document.createElement(type)
     }
 
-    initVchildren(node, props.children)
+    initVchildren(node, props.children, context)
     _.attachProps(node, props)
 
     if (props[HOOK_WILL_MOUNT]) {
-        props[HOOK_WILL_MOUNT].apply(null, node)
+        props[HOOK_WILL_MOUNT].call(null, node, props)
     }
 
     if (props[HOOK_DID_MOUNT]) {
-        pendingMountHook[pendingMountHook.length] = node
-        node.onmount = props[HOOK_DID_MOUNT]
+        pendingMountHook[pendingMountHook.length] = () => {
+            props[HOOK_DID_MOUNT].call(null, node, props)
+        }
     }
 
     return node
 }
 
-function initVchildren(node, vchildren) {
+function initVchildren(node, vchildren, context) {
     let { namespaceURI } = node
     for (let i = 0, len = vchildren.length; i < len; i++) {
-        let vchild = vchildren[i]
-        let childNode = initVnode(vchildren[i], namespaceURI)
-        childNode.vnode = vchild
-        node.appendChild(childNode)
+        node.appendChild(initVnode(vchildren[i], namespaceURI, context))
     }
 }
 
-function updateVelem(velem, newVelem, node) {
-    let { props, type } = velem
-    let newProps = newVelem.props
-    let oldHtml = props['prop-innerHTML']
-    let vchildren = props.children
-    let newVchildren = newProps.children
-
-    if (newProps[HOOK_WILL_UPDATE]) {
-        newProps[HOOK_WILL_UPDATE].call(null, node)
-    }
-
-    if (oldHtml == null && vchildren.length) {
-        let patches = diffVchildren(node, vchildren, newVchildren)
-        updateVchildren(node, newVchildren, patches)
-        // collect pending props
-        node.props = props
-        node.newProps = newProps
-        pendingPropsUpdater[pendingPropsUpdater.length] = node
-    } else {
-        // should patch props first, make sure innerHTML was cleared 
-        _.patchProps(node, props, newProps)
-        initVchildren(node, newVchildren)
-        if (newProps[HOOK_DID_UPDATE]) {
-            newProps[HOOK_DID_UPDATE].call(null, node)
-        }
-    }
-
-    return node
-}
-
-function updateVchildren(node, newVchildren, patches) {
-    let newVchildrenLen = newVchildren.length
-    let { childNodes, namespaceURI } = node
-
-    for (let i = 0; i < newVchildrenLen; i++) {
-        let newVnode = newVchildren[i]
-        let patchNode = patches[i]
-        let newChildNode = null
-        if (patchNode) {
-            let vnode = patchNode.vnode
-            newChildNode = patchNode
-            patchNode.vnode = null
-            if (newVnode !== vnode) {
-                newChildNode = updateVnode(vnode, newVnode, patchNode)
-            }
-            let currentNode = childNodes[i]
-            if (currentNode !== newChildNode) {
-                node.insertBefore(newChildNode, currentNode || null)
-            }
-        } else {
-            newChildNode = initVnode(newVnode, namespaceURI)
-            node.insertBefore(newChildNode, childNodes[i] || null)
-        }
-        newChildNode.vnode = newVnode
-    }
-}
-
-function diffVchildren(node, vchildren, newVchildren) {
+function diffVchildren(patches, vnode, newVnode, node, context) {
     let { childNodes } = node
+    let vchildren = vnode.props.children
+    let newVchildren = newVnode.props.children
     let vchildrenLen = vchildren.length
     let newVchildrenLen = newVchildren.length
 
-    // signal of whether vhild has been matched or not
-    let matches = Array(vchildrenLen)
-    let patches = Array(newVchildrenLen)
-    checkEqual(vchildren, newVchildren, childNodes, patches, matches)
-    checkSimilar(vchildren, newVchildren, childNodes, patches, matches)
-    return patches
-}
+    if (vchildrenLen === 0) {
+        if (newVchildrenLen > 0) {
+            for (let i = 0; i < newVchildrenLen; i++) {
+                patches.creates.push({
+                    vnode: newVchildren[i],
+                    parentNode: node,
+                    context: context,
+                    index: i,
+                })
+            }
+        }
+        return
+    } else if (newVchildrenLen === 0) {
+        for (let i = 0; i < vchildrenLen; i++) {
+            patches.removes.push({
+                vnode: vchildren[i],
+                node: childNodes[i],
+            })
+        }
+        return
+    }
 
-function checkEqual(vchildren, newVchildren, childNodes, patches, matches) {
-    let vchildrenLen = vchildren.length
-    let newVchildrenLen = newVchildren.length
-    // check equal
+
+    let updates = Array(newVchildrenLen)
+    let removes = null
+    let creates = null
+
+    // isEqual
     for (let i = 0; i < vchildrenLen; i++) {
         let vnode = vchildren[i]
         for (let j = 0; j < newVchildrenLen; j++) {
-            if (patches[j]) {
+            if (updates[j]) {
                 continue
             }
             let newVnode = newVchildren[j]
             if (vnode === newVnode) {
-                patches[j] = childNodes[i]
-                matches[i] = true
+                let shouldIgnore = true
+                if (context) {
+                    if (vnode.vtype === VSTATELESS) {
+                        if (vnode.type.length > 1) {
+                            shouldIgnore = false
+                        }
+                    }
+                }
+                updates[j] = {
+                    shouldIgnore: shouldIgnore,
+                    vnode: vnode,
+                    newVnode: newVnode,
+                    node: childNodes[i],
+                    context: context,
+                    index: j,
+                }
+                vchildren[i] = null
                 break
             }
         }
     }
-}
 
-function checkSimilar(vchildren, newVchildren, childNodes, patches, matches) {
-    let vchildrenLen = vchildren.length
-    let newVchildrenLen = newVchildren.length
-    let shouldRemove = null
-
-    // check similar
+    // isSimilar
     for (let i = 0; i < vchildrenLen; i++) {
-        if (matches[i]) {
+        let vnode = vchildren[i]
+        if (vnode === null) {
             continue
         }
-        let childNode = childNodes[i]
-        let vnode = vchildren[i]
-        let { type, key } = vnode
-        let isMatch = false
-        
+        let shouldRemove = true
         for (let j = 0; j < newVchildrenLen; j++) {
-            if (patches[j]) {
+            if (updates[j]) {
                 continue
             }
             let newVnode = newVchildren[j]
-            if (newVnode.type === type && newVnode.key === key) {
-                patches[j] = childNode
-                isMatch = true
+            if (
+                newVnode.type === vnode.type &&
+                newVnode.key === vnode.key
+            ) {
+                updates[j] = {
+                    vnode: vnode,
+                    newVnode: newVnode,
+                    node: childNodes[i],
+                    context: context,
+                    index: j,
+                }
+                shouldRemove = false
                 break
             }
         }
-
-        if (!isMatch) {
-            if (!shouldRemove) {
-                shouldRemove = []
+        if (shouldRemove) {
+            if (!removes) {
+                removes = []
             }
-            shouldRemove[shouldRemove.length] = childNode
-            destroyVnode(vnode, childNode)
+            removes.push({
+                vnode: vnode,
+                node: childNodes[i]
+            })
         }
     }
 
-    if (shouldRemove) {
-        for (let i = 0, len = shouldRemove.length; i < len; i++) {
-            let childNode = shouldRemove[i]
-            childNode.parentNode.removeChild(childNode)
+    for (let i = 0; i < newVchildrenLen; i++) {
+        let item = updates[i]
+        if (!item) {
+            if (!creates) {
+                creates = []
+            }
+            creates.push({
+                vnode: newVchildren[i],
+                parentNode: node,
+                context: context,
+                index: i,
+            })
+        } else if (item.vnode.vtype === VELEMENT) {
+            diffVchildren(patches, item.vnode, item.newVnode, item.node, item.context)
         }
     }
+    
+    if (removes) {
+        patches.removes.push(removes)
+    }
+    if (creates) {
+        patches.creates.push(creates)
+    }
+    patches.updates.push(updates)
 }
 
+function updateVelem(velem, newVelem, node) {
+    let newProps = newVelem.props
+    if (newProps[HOOK_WILL_UPDATE]) {
+        newProps[HOOK_WILL_UPDATE].call(null, node, newProps)
+    }
+    _.patchProps(node, velem.props, newProps)
+    if (newProps[HOOK_DID_UPDATE]) {
+        newProps[HOOK_DID_UPDATE].call(null, node, newProps)
+    }
+    return node
+}
 
 function destroyVelem(velem, node) {
     let { props } = velem
@@ -240,52 +304,58 @@ function destroyVelem(velem, node) {
     }
 
     if (_.isFn(props[HOOK_WILL_UNMOUNT])) {
-        props[HOOK_WILL_UNMOUNT].call(null, node)
+        props[HOOK_WILL_UNMOUNT].call(null, node, props)
     }
 
     detachEvents(node, props)
 }
 
-function initVcomponent(vcomponent, namespaceURI) {
-    let vnode = renderVcomponent(vcomponent)
-    let node = initVnode(vnode, namespaceURI)
+function initVstateless(vstateless, context, namespaceURI) {
+    let vnode = renderVstateless(vstateless, context)
+    let node = initVnode(vnode, context, namespaceURI)
     node.cache = node.cache || {}
-    node.cache[vcomponent.id] = vnode
+    node.cache[vstateless.uid] = vnode
     return node
 }
-function updateVcomponent(vcomponent, newVcomponent, node) {
-    let id = vcomponent.id
-    let vnode = node.cache[id]
-    delete node.cache[id]
-    let newVnode = renderVcomponent(newVcomponent)
-    let newNode = compareTwoVnodes(vnode, newVnode, node)
+
+function updateVstateless(vstateless, newVstateless, node, context) {
+    let uid = vstateless.uid
+    let vnode = node.cache[uid]
+    delete node.cache[uid]
+    let newVnode = renderVstateless(newVstateless, context)
+    let newNode = compareTwoVnodes(vnode, newVnode, node, context)
     newNode.cache = newNode.cache || {}
-    newNode.cache[newVcomponent.id] = newVnode
+    newNode.cache[newVstateless.uid] = newVnode
     if (newNode !== node) {
-        _.extend(newNode.cache, node.cache)
+        syncCache(newNode.cache, node.cache, newNode)
     }
     return newNode
 }
-function destroyVcomponent(vcomponent, node) {
-    let id = vcomponent.id
-    let vnode = node.cache[id]
-    delete node.cache[id]
+
+function destroyVstateless(vstateless, node) {
+    let uid = vstateless.uid
+    let vnode = node.cache[uid]
+    delete node.cache[uid]
     destroyVnode(vnode, node)
 }
 
-function renderVcomponent(vcomponent) {
-    let { type: factory, props } = vcomponent
-    let vnode = factory(props)
+function renderVstateless(vstateless, context) {
+    let { type: factory, props } = vstateless
+    let vnode = factory(props, context)
     if (vnode && vnode.render) {
         vnode = vnode.render()
     }
     if (vnode === null || vnode === false) {
-        vnode = createVcomment(`component placeholder: ${_.getUid()}`)
+        vnode = {
+            vtype: VCOMMENT,
+            uid: _.getUid(),
+        }
     } else if (!vnode || !vnode.vtype) {
         throw new Error(`@${factory.name}#render:You may have returned undefined, an array or some other invalid object`)
     }
     return vnode
 }
+
 
 let pendingMountHook = []
 export let clearPendingMount = () => {
@@ -303,60 +373,34 @@ export let clearPendingMount = () => {
     pendingMountHook.length = 0
 }
 
-let pendingTextUpdater = []
-export let clearPendingTextUpdater = () => {
-    let len = pendingTextUpdater.length
-    if (!len) {
-        return
-    }
-    let list = pendingTextUpdater
-    let i = -1
-    while (len--) {
-        let node = list[++i]
-        node.nodeValue = node.newText
-        // node.replaceData(0, node.length, node.newText)
-    }
-    pendingTextUpdater.length = 0
-}
-
-let pendingPropsUpdater = []
-export let clearPendingPropsUpdater = () => {
-    let len = pendingPropsUpdater.length
-    if (!len) {
-        return
-    }
-    let list = pendingPropsUpdater
-    let i = -1
-    while (len--) {
-        let node = list[++i]
-        _.patchProps(node, node.props, node.newProps)
-        if (node.newProps[HOOK_DID_UPDATE]) {
-            node.newProps[HOOK_DID_UPDATE].call(null, node)
-        }
-        node.props = node.newProps = null
-    }
-    pendingPropsUpdater.length = 0
-}
-
-export function compareTwoVnodes(vnode, newVnode, node) {
+export function compareTwoVnodes(vnode, newVnode, node, context) {
     let newNode = node
-
-    if (newVnode == null) { // remove
+    if (newVnode == null) {
+        // remove
         destroyVnode(vnode, node)
         node.parentNode.removeChild(node)
-    } else if (vnode.type !== newVnode.type || newVnode.key !== vnode.key) {  // replace
+    } else if (vnode.type !== newVnode.type || vnode.key !== newVnode.key) {
+        // replace
         destroyVnode(vnode, node)
-        newNode = initVnode(newVnode, node.namespaceURI)
+        newNode = initVnode(newVnode, context, node.namespaceURI)
         node.parentNode.replaceChild(newNode, node)
-    } else if (vnode !== newVnode) { 
+    } else if (vnode !== newVnode || context) {
         // same type and same key -> update
-        let vtype = vnode.vtype
-        if (vtype === VELEMENT) {
-            newNode = updateVelem(vnode, newVnode, node)
-        } else if (vtype === VCOMPONENT) {
-            newNode = updateVcomponent(vnode, newVnode, node)
+        newNode = updateVnode(vnode, newVnode, node, context)
+    }
+    return newNode
+}
+
+function syncCache(cache, oldCache, node) {
+    for (let key in oldCache) {
+        if (!oldCache.hasOwnProperty(key)) {
+            continue
+        }
+        let value = oldCache[key]
+        cache[key] = value
+            // is component, update component.$cache.node
+        if (value.forceUpdate) {
+            value.$cache.node = node
         }
     }
-    
-    return newNode
 }

@@ -2,8 +2,8 @@
 let directives = {}
 let DIRECTIVE_SPEC = /^([^-]+)-(.+)$/
 
-export function addDirective(name, methods) {
-	directives[name] = methods
+export function addDirective(name, configs) {
+	directives[name] = configs
 }
 
 export function removeDirective(name) {
@@ -36,7 +36,7 @@ function detachProp(elem, propKey) {
 
 export function attachProps(elem, props) {
     for (let propKey in props) {
-        if (props[propKey] != null) {
+        if (propKey !== 'children' && props[propKey] != null) {
         	attachProp(elem, propKey, props[propKey])
         }
     }
@@ -44,6 +44,9 @@ export function attachProps(elem, props) {
 
 export function patchProps(elem, props, newProps) {
     for (let propKey in props) {
+        if (propKey === 'children' ) {
+            continue
+        }
         if (newProps.hasOwnProperty(propKey)) {
             if (newProps[propKey] !== props[propKey]) {
                 if (newProps[propKey] == null) {
@@ -57,6 +60,9 @@ export function patchProps(elem, props, newProps) {
         }
     }
     for (let propKey in newProps) {
+        if (propKey === 'children' ) {
+            continue
+        }
         if (!props.hasOwnProperty(propKey)) {
             attachProp(elem, propKey, newProps[propKey])
         }
