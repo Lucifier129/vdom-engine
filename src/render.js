@@ -65,6 +65,7 @@ export function render(vnode, container, context, callback) {
 	if (callback) {
 		callback()
 	}
+
 }
 
 export function destroy(container) {

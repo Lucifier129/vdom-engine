@@ -137,6 +137,18 @@
       }
   }
 
+  function extend(to, from) {
+      if (!from) {
+          return to;
+      }
+      var keys = Object.keys(from);
+      var i = keys.length;
+      while (i--) {
+          to[keys[i]] = from[keys[i]];
+      }
+      return to;
+  }
+
   var uid = 0;
 
   function getUid() {
@@ -423,8 +435,7 @@
           return node;
       }
 
-      var oldHtml = vnode.props[HTML_KEY] && vnode.props[HTML_KEY].__html;
-      if (oldHtml != null) {
+      if (vnode.props[HTML_KEY] != null) {
           updateVelem(vnode, newVnode, node, context);
           initVchildren(newVnode, node, context);
       } else {
@@ -442,8 +453,6 @@
       };
       // console.time('diff')
       diffVchildren(patches, vnode, newVnode, node, context);
-      // console.timeEnd('diff')
-      // console.time('patch')
       flatEach(patches.removes, applyDestroy);
       flatEach(patches.updates, applyUpdate);
       flatEach(patches.creates, applyCreate);
@@ -454,25 +463,29 @@
       if (!data) {
           return;
       }
-      var vnode = data.vnode;
       var newNode = data.node;
 
       // update
-      if (!data.shouldIgnore) {
+      if (!data.shouldIgnoreUpdate) {
+          var vnode = data.vnode;
+          var newVnode = data.newVnode;
+          var context = data.context;
+
           if (vnode.vtype === VELEMENT) {
-              updateVelem(vnode, data.newVnode, newNode, data.context);
+              updateVelem(vnode, newVnode, newNode, context);
           } else if (vnode.vtype === VSTATELESS) {
-              newNode = updateVstateless(vnode, data.newVnode, newNode, data.context);
+              newNode = updateVstateless(vnode, newVnode, newNode, context);
           } else if (!vnode.vtype) {
-              newNode.replaceData(0, newNode.length, data.newVnode);
-              // newNode.nodeValue = data.newVnode
+              newNode.nodeValue = newVnode;
           }
       }
 
       // re-order
-      var currentNode = newNode.parentNode.childNodes[data.index];
-      if (currentNode !== newNode) {
-          newNode.parentNode.insertBefore(newNode, currentNode);
+      if (data.index !== data.fromIndex) {
+          var existNode = newNode.parentNode.childNodes[index];
+          if (existNode !== newNode) {
+              newNode.parentNode.insertBefore(newNode, existNode);
+          }
       }
       return newNode;
   }
@@ -483,8 +496,10 @@
   }
 
   function applyCreate(data) {
-      var node = initVnode(data.vnode, data.context, data.parentNode.namespaceURI);
-      data.parentNode.insertBefore(node, data.parentNode.childNodes[data.index]);
+      var parentNode = data.parentNode;
+      var existNode = parentNode.childNodes[data.index];
+      var node = initVnode(data.vnode, data.context, parentNode.namespaceURI);
+      parentNode.insertBefore(node, existNode);
   }
 
   /**
@@ -525,9 +540,11 @@
       }
 
       if (props[HOOK_DID_MOUNT]) {
-          pendingMountHook[pendingMountHook.length] = function () {
-              props[HOOK_DID_MOUNT].call(null, node, props);
-          };
+          pendingHooks.push({
+              type: HOOK_DID_MOUNT,
+              node: node,
+              props: props
+          });
       }
 
       return node;
@@ -537,7 +554,7 @@
       var namespaceURI = node.namespaceURI;
 
       for (var i = 0, len = vchildren.length; i < len; i++) {
-          node.appendChild(initVnode(vchildren[i], namespaceURI, context));
+          node.appendChild(initVnode(vchildren[i], context, namespaceURI));
       }
   }
 
@@ -550,15 +567,13 @@
       var newVchildrenLen = newVchildren.length;
 
       if (vchildrenLen === 0) {
-          if (newVchildrenLen > 0) {
-              for (var i = 0; i < newVchildrenLen; i++) {
-                  patches.creates.push({
-                      vnode: newVchildren[i],
-                      parentNode: node,
-                      context: context,
-                      index: i
-                  });
-              }
+          for (var i = 0; i < newVchildrenLen; i++) {
+              patches.creates.push({
+                  vnode: newVchildren[i],
+                  parentNode: node,
+                  context: context,
+                  index: i
+              });
           }
           return;
       } else if (newVchildrenLen === 0) {
@@ -571,6 +586,7 @@
           return;
       }
 
+      var matches = {};
       var updates = Array(newVchildrenLen);
       var removes = null;
       var creates = null;
@@ -584,23 +600,28 @@
               }
               var _newVnode = newVchildren[j];
               if (_vnode === _newVnode) {
-                  var shouldIgnore = true;
+                  var shouldIgnoreUpdate = true;
                   if (context) {
                       if (_vnode.vtype === VSTATELESS) {
+                          /**
+                           * stateless component: (props, context) => <div />
+                           * if context argument is specified and context is exist, should re-render
+                           */
                           if (_vnode.type.length > 1) {
-                              shouldIgnore = false;
+                              shouldIgnoreUpdate = false;
                           }
                       }
                   }
                   updates[j] = {
-                      shouldIgnore: shouldIgnore,
+                      shouldIgnoreUpdate: shouldIgnoreUpdate,
                       vnode: _vnode,
                       newVnode: _newVnode,
                       node: childNodes[i],
                       context: context,
-                      index: j
+                      index: j,
+                      fromIndex: i
                   };
-                  vchildren[i] = null;
+                  matches[i] = true;
                   break;
               }
           }
@@ -608,10 +629,10 @@
 
       // isSimilar
       for (var i = 0; i < vchildrenLen; i++) {
-          var _vnode2 = vchildren[i];
-          if (_vnode2 === null) {
+          if (matches[i]) {
               continue;
           }
+          var _vnode2 = vchildren[i];
           var shouldRemove = true;
           for (var j = 0; j < newVchildrenLen; j++) {
               if (updates[j]) {
@@ -624,7 +645,8 @@
                       newVnode: _newVnode2,
                       node: childNodes[i],
                       context: context,
-                      index: j
+                      index: j,
+                      fromIndex: i
                   };
                   shouldRemove = false;
                   break;
@@ -713,7 +735,7 @@
       newNode.cache = newNode.cache || {};
       newNode.cache[newVstateless.uid] = newVnode;
       if (newNode !== node) {
-          syncCache(newNode.cache, node.cache, newNode);
+          extend(newNode.cache, node.cache);
       }
       return newNode;
   }
@@ -744,20 +766,19 @@
       return vnode;
   }
 
-  var pendingMountHook = [];
+  var pendingHooks = [];
   var clearPendingMount = function clearPendingMount() {
-      var len = pendingMountHook.length;
+      var len = pendingHooks.length;
       if (!len) {
           return;
       }
-      var list = pendingMountHook;
+      var list = pendingHooks;
       var i = -1;
       while (len--) {
-          var node = list[++i];
-          node.onmount.call(null, node);
-          node.onmount = null;
+          var item = list[++i];
+          item.props[item.type].call(null, item.node, item.props);
       }
-      pendingMountHook.length = 0;
+      pendingHooks.length = 0;
   };
 
   function compareTwoVnodes(vnode, newVnode, node, context) {
@@ -776,20 +797,6 @@
           newNode = updateVnode(vnode, newVnode, node, context);
       }
       return newNode;
-  }
-
-  function syncCache(cache, oldCache, node) {
-      for (var key in oldCache) {
-          if (!oldCache.hasOwnProperty(key)) {
-              continue;
-          }
-          var value = oldCache[key];
-          cache[key] = value;
-          // is component, update component.$cache.node
-          if (value.forceUpdate) {
-              value.$cache.node = node;
-          }
-      }
   }
 
   var pendingRendering = {};
