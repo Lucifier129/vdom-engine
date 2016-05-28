@@ -44,23 +44,20 @@ export function attachProps(elem, props) {
 
 export function patchProps(elem, props, newProps) {
     for (let propKey in props) {
-        if (propKey === 'children' ) {
+        if (propKey === 'children') {
             continue
         }
-        if (propKey in newProps) {
-            if (newProps[propKey] !== props[propKey]) {
-                if (newProps[propKey] == null) {
-                    detachProp(elem, propKey)
-                } else {
-                    attachProp(elem, propKey, newProps[propKey])
-                }
+        let newValue = newProps[propKey]
+        if (newValue !== props[propKey]) {
+            if (newValue == null) {
+                detachProp(elem, propKey)
+            } else {
+                attachProp(elem, propKey, newValue)
             }
-        } else {
-            detachProp(elem, propKey)
         }
     }
     for (let propKey in newProps) {
-        if (propKey === 'children' ) {
+        if (propKey === 'children') {
             continue
         }
         if (!(propKey in props)) {
@@ -68,3 +65,4 @@ export function patchProps(elem, props, newProps) {
         }
     }
 }
+

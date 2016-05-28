@@ -52,16 +52,13 @@ function patchProps(elem, props, newProps) {
         if (propKey === 'children') {
             continue;
         }
-        if (propKey in newProps) {
-            if (newProps[propKey] !== props[propKey]) {
-                if (newProps[propKey] == null) {
-                    detachProp(elem, propKey);
-                } else {
-                    attachProp(elem, propKey, newProps[propKey]);
-                }
+        var newValue = newProps[propKey];
+        if (newValue !== props[propKey]) {
+            if (newValue == null) {
+                detachProp(elem, propKey);
+            } else {
+                attachProp(elem, propKey, newValue);
             }
-        } else {
-            detachProp(elem, propKey);
         }
     }
     for (var propKey in newProps) {
@@ -131,6 +128,10 @@ function flatEach(list, iteratee, a) {
             iteratee(item, a);
         }
     }
+}
+
+function addItem(list, item) {
+    list[list.length] = item;
 }
 
 function extend(to, from) {
@@ -459,7 +460,7 @@ function applyUpdate(data) {
     if (!data) {
         return;
     }
-    var newNode = data.node;
+    var node = data.node;
 
     // update
     if (data.shouldUpdate) {
@@ -467,23 +468,22 @@ function applyUpdate(data) {
         var newVnode = data.newVnode;
         var context = data.context;
 
-        if (vnode.vtype === VELEMENT) {
-            updateVelem(vnode, newVnode, newNode, context);
+        if (!vnode.vtype) {
+            node.nodeValue = newVnode;
+        } else if (vnode.vtype === VELEMENT) {
+            updateVelem(vnode, newVnode, node, context);
         } else if (vnode.vtype === VSTATELESS) {
-            newNode = updateVstateless(vnode, newVnode, newNode, context);
-        } else if (!vnode.vtype) {
-            newNode.nodeValue = newVnode;
+            node = updateVstateless(vnode, newVnode, node, context);
         }
     }
 
     // re-order
     if (data.index !== data.fromIndex) {
-        var existNode = newNode.parentNode.childNodes[index];
-        if (existNode !== newNode) {
-            newNode.parentNode.insertBefore(newNode, existNode);
+        var existNode = node.parentNode.childNodes[index];
+        if (existNode !== node) {
+            node.parentNode.insertBefore(node, existNode);
         }
     }
-    return newNode;
 }
 
 function applyDestroy(data) {
@@ -536,7 +536,7 @@ function initVelem(velem, context, namespaceURI) {
     }
 
     if (props[HOOK_DID_MOUNT]) {
-        pendingHooks.push({
+        addItem(pendingHooks, {
             type: HOOK_DID_MOUNT,
             node: node,
             props: props
@@ -563,8 +563,11 @@ function diffVchildren(patches, vnode, newVnode, node, context) {
     var newVchildrenLen = newVchildren.length;
 
     if (vchildrenLen === 0) {
+        if (newVchildrenLen === 0) {
+            return;
+        }
         for (var i = 0; i < newVchildrenLen; i++) {
-            patches.creates.push({
+            addItem(patches.creates, {
                 vnode: newVchildren[i],
                 parentNode: node,
                 context: context,
@@ -574,7 +577,7 @@ function diffVchildren(patches, vnode, newVnode, node, context) {
         return;
     } else if (newVchildrenLen === 0) {
         for (var i = 0; i < vchildrenLen; i++) {
-            patches.removes.push({
+            addItem(patches.removes, {
                 vnode: vchildren[i],
                 node: childNodes[i]
             });
@@ -653,7 +656,7 @@ function diffVchildren(patches, vnode, newVnode, node, context) {
             if (!removes) {
                 removes = [];
             }
-            removes.push({
+            addItem(removes, {
                 vnode: _vnode2,
                 node: childNodes[i]
             });
@@ -666,7 +669,7 @@ function diffVchildren(patches, vnode, newVnode, node, context) {
             if (!creates) {
                 creates = [];
             }
-            creates.push({
+            addItem(creates, {
                 vnode: newVchildren[i],
                 parentNode: node,
                 context: context,
@@ -678,12 +681,12 @@ function diffVchildren(patches, vnode, newVnode, node, context) {
     }
 
     if (removes) {
-        patches.removes.push(removes);
+        addItem(patches.removes, removes);
     }
     if (creates) {
-        patches.creates.push(creates);
+        addItem(patches.creates, creates);
     }
-    patches.updates.push(updates);
+    addItem(patches.updates, updates);
 }
 
 function updateVelem(velem, newVelem, node) {

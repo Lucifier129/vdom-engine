@@ -33,6 +33,10 @@ export function flatEach(list, iteratee, a) {
     }
 }
 
+export function addItem(list, item) {
+    list[list.length] = item
+}
+
 
 export function extend(to, from) {
     if (!from) {
