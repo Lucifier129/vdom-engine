@@ -47,7 +47,7 @@ export function patchProps(elem, props, newProps) {
         if (propKey === 'children' ) {
             continue
         }
-        if (newProps.hasOwnProperty(propKey)) {
+        if (propKey in newProps) {
             if (newProps[propKey] !== props[propKey]) {
                 if (newProps[propKey] == null) {
                     detachProp(elem, propKey)
@@ -63,7 +63,7 @@ export function patchProps(elem, props, newProps) {
         if (propKey === 'children' ) {
             continue
         }
-        if (!props.hasOwnProperty(propKey)) {
+        if (!(propKey in props)) {
             attachProp(elem, propKey, newProps[propKey])
         }
     }

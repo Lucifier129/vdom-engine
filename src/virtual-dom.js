@@ -56,12 +56,12 @@ function updateVChildren(vnode, newVnode, node, context) {
             updates: [],
             creates: [],
         }
-        // console.time('diff')
+    // console.time('patch')
     diffVchildren(patches, vnode, newVnode, node, context)
     _.flatEach(patches.removes, applyDestroy)
     _.flatEach(patches.updates, applyUpdate)
     _.flatEach(patches.creates, applyCreate)
-        // console.timeEnd('patch')
+    // console.timeEnd('patch')
 }
 
 
@@ -72,7 +72,7 @@ function applyUpdate(data) {
     let newNode = data.node
 
     // update
-    if (!data.shouldIgnoreUpdate) {
+    if (data.shouldUpdate) {
         let { vnode, newVnode, context } = data
         if (vnode.vtype === VELEMENT) {
             updateVelem(vnode, newVnode, newNode, context)
@@ -196,7 +196,7 @@ function diffVchildren(patches, vnode, newVnode, node, context) {
             }
             let newVnode = newVchildren[j]
             if (vnode === newVnode) {
-                let shouldIgnoreUpdate = true
+                let shouldUpdate = false
                 if (context) {
                     if (vnode.vtype === VSTATELESS) {
                         /**
@@ -204,12 +204,12 @@ function diffVchildren(patches, vnode, newVnode, node, context) {
                          * if context argument is specified and context is exist, should re-render
                          */
                         if (vnode.type.length > 1) {
-                            shouldIgnoreUpdate = false
+                            shouldUpdate = true
                         }
                     }
                 }
                 updates[j] = {
-                    shouldIgnoreUpdate: shouldIgnoreUpdate,
+                    shouldUpdate: shouldUpdate,
                     vnode: vnode,
                     newVnode: newVnode,
                     node: childNodes[i],
@@ -240,6 +240,7 @@ function diffVchildren(patches, vnode, newVnode, node, context) {
                 newVnode.key === vnode.key
             ) {
                 updates[j] = {
+                    shouldUpdate: true,
                     vnode: vnode,
                     newVnode: newVnode,
                     node: childNodes[i],

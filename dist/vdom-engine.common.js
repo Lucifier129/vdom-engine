@@ -52,7 +52,7 @@ function patchProps(elem, props, newProps) {
         if (propKey === 'children') {
             continue;
         }
-        if (newProps.hasOwnProperty(propKey)) {
+        if (propKey in newProps) {
             if (newProps[propKey] !== props[propKey]) {
                 if (newProps[propKey] == null) {
                     detachProp(elem, propKey);
@@ -68,7 +68,7 @@ function patchProps(elem, props, newProps) {
         if (propKey === 'children') {
             continue;
         }
-        if (!props.hasOwnProperty(propKey)) {
+        if (!(propKey in props)) {
             attachProp(elem, propKey, newProps[propKey]);
         }
     }
@@ -447,7 +447,7 @@ function updateVChildren(vnode, newVnode, node, context) {
         updates: [],
         creates: []
     };
-    // console.time('diff')
+    // console.time('patch')
     diffVchildren(patches, vnode, newVnode, node, context);
     flatEach(patches.removes, applyDestroy);
     flatEach(patches.updates, applyUpdate);
@@ -462,7 +462,7 @@ function applyUpdate(data) {
     var newNode = data.node;
 
     // update
-    if (!data.shouldIgnoreUpdate) {
+    if (data.shouldUpdate) {
         var vnode = data.vnode;
         var newVnode = data.newVnode;
         var context = data.context;
@@ -596,7 +596,7 @@ function diffVchildren(patches, vnode, newVnode, node, context) {
             }
             var _newVnode = newVchildren[j];
             if (_vnode === _newVnode) {
-                var shouldIgnoreUpdate = true;
+                var shouldUpdate = false;
                 if (context) {
                     if (_vnode.vtype === VSTATELESS) {
                         /**
@@ -604,12 +604,12 @@ function diffVchildren(patches, vnode, newVnode, node, context) {
                          * if context argument is specified and context is exist, should re-render
                          */
                         if (_vnode.type.length > 1) {
-                            shouldIgnoreUpdate = false;
+                            shouldUpdate = true;
                         }
                     }
                 }
                 updates[j] = {
-                    shouldIgnoreUpdate: shouldIgnoreUpdate,
+                    shouldUpdate: shouldUpdate,
                     vnode: _vnode,
                     newVnode: _newVnode,
                     node: childNodes[i],
@@ -637,6 +637,7 @@ function diffVchildren(patches, vnode, newVnode, node, context) {
             var _newVnode2 = newVchildren[j];
             if (_newVnode2.type === _vnode2.type && _newVnode2.key === _vnode2.key) {
                 updates[j] = {
+                    shouldUpdate: true,
                     vnode: _vnode2,
                     newVnode: _newVnode2,
                     node: childNodes[i],
