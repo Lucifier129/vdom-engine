@@ -28,13 +28,15 @@ export function createElement(type, props, /* ...children */) {
 	let argsLen = arguments.length
 	let finalChildren = []
 
-	for (let i = 2; i < argsLen; i++) {
-	    let child = arguments[i]
-	    if (_.isArr(child)) {
-	        _.flatEach(child, collectChild, finalChildren)
-	    } else {
-	    	collectChild(child, finalChildren)
-	    }
+	if (argsLen > 2) {
+		for (let i = 2; i < argsLen; i++) {
+		    let child = arguments[i]
+		    if (_.isArr(child)) {
+		        _.flatEach(child, collectChild, finalChildren)
+		    } else {
+		    	collectChild(child, finalChildren)
+		    }
+		}
 	}
 
 	finalProps.children = finalChildren

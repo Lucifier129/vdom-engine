@@ -56,12 +56,15 @@ function updateVChildren(vnode, newVnode, node, context) {
             updates: [],
             creates: [],
         }
-    // console.time('patch')
+    // console.time('time')
     diffVchildren(patches, vnode, newVnode, node, context)
+    
     _.flatEach(patches.removes, applyDestroy)
+
     _.flatEach(patches.updates, applyUpdate)
+    
     _.flatEach(patches.creates, applyCreate)
-    // console.timeEnd('patch')
+    // console.timeEnd('time')
 }
 
 

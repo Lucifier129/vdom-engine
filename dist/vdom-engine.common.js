@@ -448,12 +448,15 @@ function updateVChildren(vnode, newVnode, node, context) {
         updates: [],
         creates: []
     };
-    // console.time('patch')
+    // console.time('time')
     diffVchildren(patches, vnode, newVnode, node, context);
+
     flatEach(patches.removes, applyDestroy);
+
     flatEach(patches.updates, applyUpdate);
+
     flatEach(patches.creates, applyCreate);
-    // console.timeEnd('patch')
+    // console.timeEnd('time')
 }
 
 function applyUpdate(data) {
@@ -834,7 +837,6 @@ function render(vnode, container, context, callback) {
 	}
 
 	pendingRendering[id] = true;
-
 	if (vnodeStore.hasOwnProperty(id)) {
 		compareTwoVnodes(vnodeStore[id], vnode, container.firstChild, context);
 	} else {
@@ -903,12 +905,14 @@ function createElement(type, props) /* ...children */{
 	var argsLen = arguments.length;
 	var finalChildren = [];
 
-	for (var i = 2; i < argsLen; i++) {
-		var child = arguments[i];
-		if (isArr(child)) {
-			flatEach(child, collectChild, finalChildren);
-		} else {
-			collectChild(child, finalChildren);
+	if (argsLen > 2) {
+		for (var i = 2; i < argsLen; i++) {
+			var child = arguments[i];
+			if (isArr(child)) {
+				flatEach(child, collectChild, finalChildren);
+			} else {
+				collectChild(child, finalChildren);
+			}
 		}
 	}
 

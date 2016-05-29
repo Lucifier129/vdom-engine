@@ -41,7 +41,6 @@ export function render(vnode, container, context, callback) {
 	}
 
 	pendingRendering[id] = true
-
 	if (vnodeStore.hasOwnProperty(id)) {
 		compareTwoVnodes(vnodeStore[id], vnode, container.firstChild, context)
 	} else {
