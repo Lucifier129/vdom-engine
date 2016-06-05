@@ -46,10 +46,11 @@ var renderDBMon = function() {
   React.render(<DBMon databases={ENV.generateData().toArray()} />, document.getElementById('dbmon'));
   Monitoring.renderRate.ping();
   setTimeout(renderDBMon, ENV.timeout);
+  
 }
-
+console.time('mount')
 renderDBMon()
-
+console.timeEnd('mount')
 
 
 
