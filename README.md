@@ -1,7 +1,7 @@
 # vdom-engine
 virtual-dom engine that help everyone to build their own modern view library and user interfaces
 
-React is awesome, but also too huge to be a view library, its way of handle props to dom is very limit and hard to extend by user. Sometimes we nedd a smaller and extensible virtual-dom library.
+React is awesome, but also too huge to be a view library, its way of handle props to dom is very limit and hard to extend by user. Sometimes we need a smaller and extensible virtual-dom library.
 
 # Installation
 
@@ -11,11 +11,11 @@ npm install vdom-engine
 
 # Getting Start
 
-vdom-engine is a react-like library, but only support `virtual-dom` and `stateless functional component`, this make it smaller and faster. Its api is the subset of React's api with a few different points.
+vdom-engine is a react-like library, but only support `virtual-dom` and `stateless functional component`, these make it smaller and faster. Its api are the subset of React's api with a few different points.
 
 ## Handle props
 
-Unlike react, vdom-engine use `directive-style` to handle its props, now it has five build-in directives, 'attr|prop|on|css|hook'. The `prop in props` which did not match any directive would be ignored.
+Unlike react, vdom-engine use `directive-style` to handle its props, now it has five build-in directives, `attr|prop|on|css|hook`. The `prop in props` which did not match any directive would be ignored.
 
 ```javascript
 import React from 'vdom-engine'
@@ -89,7 +89,7 @@ React.render(
 ```
 ## Handle life-cycle methods
 
-Unlike React, vdom-engine did not support stateful component(React.Component or React.createClass), but every native-tag of virtual-dom has its life-cycle, sush as `div`, `span`, `p`, etc.
+Unlike React, vdom-engine do not support stateful component(`React.Component` or `React.createClass`), but every native-tag of virtual-dom has its life-cycle, sush as `div`, `span`, `p`, etc.
 
 Use the directive 'hook-lifyCycle' like below:
 
