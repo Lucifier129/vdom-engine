@@ -17,6 +17,7 @@ function removeDirective(name) {
 }
 
 var currentName = null;
+
 function matchDirective(propKey) {
     var matches = propKey.match(DIRECTIVE_SPEC);
     if (matches) {
@@ -71,31 +72,19 @@ function patchProps(elem, props, newProps) {
     }
 }
 
-var DOMPropDirective = {
-	attach: attachDOMProp,
-	detach: detachDOMProp
-};
+var SVGNamespaceURI = 'http://www.w3.org/2000/svg';
+var COMPONENT_ID = 'liteid';
+var VELEMENT = 1;
+var VSTATELESS = 2;
+var VCOMMENT$1 = 3;
+var HTML_KEY = 'prop-innerHTML';
+var HOOK_WILL_MOUNT = 'hook-willMount';
+var HOOK_DID_MOUNT = 'hook-didMount';
+var HOOK_WILL_UPDATE = 'hook-willUpdate';
+var HOOK_DID_UPDATE = 'hook-didUpdate';
+var HOOK_WILL_UNMOUNT = 'hook-willUnmount';
 
-var DOMAttrDirective = {
-	attach: attachDOMAttr,
-	detach: detachDOMAttr
-};
-
-function attachDOMProp(elem, propName, propValue) {
-	elem[propName] = propValue;
-}
-
-function detachDOMProp(elem, propName) {
-	elem[propName] = '';
-}
-
-function attachDOMAttr(elem, attrName, attrValue) {
-	elem.setAttribute(attrName, attrValue + '');
-}
-
-function detachDOMAttr(elem, attrName) {
-	elem.removeAttribute(attrName);
-}
+var emptyList = [];
 
 function isFn(obj) {
     return typeof obj === 'function';
@@ -152,8 +141,231 @@ function getUid() {
     return ++uid;
 }
 
+/**
+ * CSS properties which accept numbers but are not in units of "px".
+ */
+var isUnitlessNumber = {
+    animationIterationCount: 1,
+    borderImageOutset: 1,
+    borderImageSlice: 1,
+    borderImageWidth: 1,
+    boxFlex: 1,
+    boxFlexGroup: 1,
+    boxOrdinalGroup: 1,
+    columnCount: 1,
+    flex: 1,
+    flexGrow: 1,
+    flexPositive: 1,
+    flexShrink: 1,
+    flexNegative: 1,
+    flexOrder: 1,
+    gridRow: 1,
+    gridColumn: 1,
+    fontWeight: 1,
+    lineClamp: 1,
+    lineHeight: 1,
+    opacity: 1,
+    order: 1,
+    orphans: 1,
+    tabSize: 1,
+    widows: 1,
+    zIndex: 1,
+    zoom: 1,
+
+    // SVG-related properties
+    fillOpacity: 1,
+    floodOpacity: 1,
+    stopOpacity: 1,
+    strokeDasharray: 1,
+    strokeDashoffset: 1,
+    strokeMiterlimit: 1,
+    strokeOpacity: 1,
+    strokeWidth: 1
+};
+
+function prefixKey(prefix, key) {
+    return prefix + key.charAt(0).toUpperCase() + key.substring(1);
+}
+
+var prefixes = ['Webkit', 'ms', 'Moz', 'O'];
+
+Object.keys(isUnitlessNumber).forEach(function (prop) {
+    prefixes.forEach(function (prefix) {
+        isUnitlessNumber[prefixKey(prefix, prop)] = 1;
+    });
+});
+
+var RE_NUMBER = /^-?\d+(\.\d+)?$/;
+
+function renderVstateless(vstateless, context) {
+    var factory = vstateless.type;
+    var props = vstateless.props;
+
+    var vnode = factory(props, context);
+    if (vnode && vnode.render) {
+        vnode = vnode.render();
+    }
+    if (vnode === null || vnode === false) {
+        vnode = {
+            vtype: VCOMMENT,
+            uid: _.getUid()
+        };
+    } else if (!vnode || !vnode.vtype) {
+        throw new Error('@' + factory.name + '#render:You may have returned undefined, an array or some other invalid object');
+    }
+    return vnode;
+}
+
 if (!Object.freeze) {
     Object.freeze = identity;
+}
+
+function createElement(type, props) /* ...children */{
+	var finalProps = {};
+	var key = null;
+	if (props != null) {
+		for (var propKey in props) {
+			if (propKey === 'key') {
+				if (props.key !== undefined) {
+					key = '' + props.key;
+				}
+			} else {
+				finalProps[propKey] = props[propKey];
+			}
+		}
+	}
+
+	var defaultProps = type.defaultProps;
+	if (defaultProps) {
+		for (var propKey in defaultProps) {
+			if (finalProps[propKey] === undefined) {
+				finalProps[propKey] = defaultProps[propKey];
+			}
+		}
+	}
+
+	var argsLen = arguments.length;
+	var finalChildren = emptyList;
+
+	if (argsLen > 2) {
+		finalChildren = [];
+		for (var i = 2; i < argsLen; i++) {
+			var child = arguments[i];
+			if (isArr(child)) {
+				flatEach(child, collectChild, finalChildren);
+			} else {
+				collectChild(child, finalChildren);
+			}
+		}
+	}
+
+	finalProps.children = finalChildren;
+
+	var vtype = null;
+	if (typeof type === 'string') {
+		vtype = VELEMENT;
+	} else if (typeof type === 'function') {
+		vtype = VSTATELESS;
+	} else {
+		throw new Error('unexpect type [ ' + type + ' ]');
+	}
+
+	var vnode = {
+		vtype: vtype,
+		type: type,
+		props: finalProps,
+		key: key
+	};
+	if (vtype === VSTATELESS) {
+		vnode.uid = getUid();
+	}
+
+	return vnode;
+}
+
+function isValidElement(obj) {
+	return obj != null && !!obj.vtype;
+}
+
+function createFactory(type) {
+	var factory = function factory() {
+		for (var _len = arguments.length, args = Array(_len), _key = 0; _key < _len; _key++) {
+			args[_key] = arguments[_key];
+		}
+
+		return createElement.apply(undefined, [type].concat(args));
+	};
+	factory.type = type;
+	return factory;
+}
+
+function collectChild(child, children) {
+	if (child != null && typeof child !== 'boolean') {
+		children[children.length] = child.vtype ? child : '' + child;
+	}
+}
+
+var Share = {
+	h: createElement,
+	createElement: createElement,
+	createFactory: createFactory,
+	isValidElement: isValidElement,
+	addDirective: addDirective,
+	removeDirective: removeDirective
+};
+
+var DOMPropDirective = {
+	attach: attachDOMProp,
+	detach: detachDOMProp
+};
+
+var DOMAttrDirective = {
+	attach: attachDOMAttr,
+	detach: detachDOMAttr
+};
+
+function attachDOMProp(elem, propName, propValue) {
+	elem[propName] = propValue;
+}
+
+function detachDOMProp(elem, propName) {
+	elem[propName] = '';
+}
+
+function attachDOMAttr(elem, attrName, attrValue) {
+	elem.setAttribute(attrName, attrValue + '');
+}
+
+function detachDOMAttr(elem, attrName) {
+	elem.removeAttribute(attrName);
+}
+
+var styleDirective = {
+    attach: attachStyle,
+    detach: detachStyle
+};
+
+function attachStyle(elem, styleName, styleValue) {
+    setStyleValue(elem.style, styleName, styleValue);
+}
+
+function detachStyle(elem, styleName) {
+    elem.style[styleName] = '';
+}
+
+function setStyleValue(elemStyle, styleName, styleValue) {
+
+    if (!_.isUnitlessNumber[styleName] && _.RE_NUMBER.test(styleValue)) {
+        styleValue += 'px';
+    } else if (styleValue == null || typeof styleValue === 'boolean') {
+        styleValue = '';
+    }
+
+    if (styleName === 'float') {
+        styleName = 'cssFloat';
+    }
+
+    elemStyle[styleName] = styleValue;
 }
 
 // event config
@@ -302,104 +514,6 @@ function createSyntheticEvent(nativeEvent) {
 	return syntheticEvent;
 }
 
-var styleDirective = {
-    attach: attachStyle,
-    detach: detachStyle
-};
-
-function attachStyle(elem, styleName, styleValue) {
-    setStyleValue(elem.style, styleName, styleValue);
-}
-
-function detachStyle(elem, styleName) {
-    elem.style[styleName] = '';
-}
-
-/**
- * CSS properties which accept numbers but are not in units of "px".
- */
-var isUnitlessNumber = {
-    animationIterationCount: 1,
-    borderImageOutset: 1,
-    borderImageSlice: 1,
-    borderImageWidth: 1,
-    boxFlex: 1,
-    boxFlexGroup: 1,
-    boxOrdinalGroup: 1,
-    columnCount: 1,
-    flex: 1,
-    flexGrow: 1,
-    flexPositive: 1,
-    flexShrink: 1,
-    flexNegative: 1,
-    flexOrder: 1,
-    gridRow: 1,
-    gridColumn: 1,
-    fontWeight: 1,
-    lineClamp: 1,
-    lineHeight: 1,
-    opacity: 1,
-    order: 1,
-    orphans: 1,
-    tabSize: 1,
-    widows: 1,
-    zIndex: 1,
-    zoom: 1,
-
-    // SVG-related properties
-    fillOpacity: 1,
-    floodOpacity: 1,
-    stopOpacity: 1,
-    strokeDasharray: 1,
-    strokeDashoffset: 1,
-    strokeMiterlimit: 1,
-    strokeOpacity: 1,
-    strokeWidth: 1
-};
-
-function prefixKey(prefix, key) {
-    return prefix + key.charAt(0).toUpperCase() + key.substring(1);
-}
-
-var prefixes = ['Webkit', 'ms', 'Moz', 'O'];
-
-Object.keys(isUnitlessNumber).forEach(function (prop) {
-    prefixes.forEach(function (prefix) {
-        isUnitlessNumber[prefixKey(prefix, prop)] = 1;
-    });
-});
-
-var RE_NUMBER = /^-?\d+(\.\d+)?$/;
-function setStyleValue(elemStyle, styleName, styleValue) {
-
-    if (!isUnitlessNumber[styleName] && RE_NUMBER.test(styleValue)) {
-        elemStyle[styleName] = styleValue + 'px';
-        return;
-    }
-
-    if (styleName === 'float') {
-        styleName = 'cssFloat';
-    }
-
-    if (styleValue == null || typeof styleValue === 'boolean') {
-        styleValue = '';
-    }
-
-    elemStyle[styleName] = styleValue;
-}
-
-var SVGNamespaceURI = 'http://www.w3.org/2000/svg';
-var COMPONENT_ID = 'liteid';
-var VELEMENT = 1;
-var VSTATELESS = 2;
-var VCOMMENT = 3;
-var HTML_KEY = 'prop-innerHTML';
-var HOOK_WILL_MOUNT = 'hook-willMount';
-var HOOK_DID_MOUNT = 'hook-didMount';
-var HOOK_WILL_UPDATE = 'hook-willUpdate';
-var HOOK_DID_UPDATE = 'hook-didUpdate';
-var HOOK_WILL_UNMOUNT = 'hook-willUnmount';
-
 function initVnode(vnode, context, namespaceURI) {
     var vtype = vnode.vtype;
 
@@ -413,7 +527,7 @@ function initVnode(vnode, context, namespaceURI) {
     } else if (vtype === VSTATELESS) {
         // init stateless component
         node = initVstateless(vnode, context, namespaceURI);
-    } else if (vtype === VCOMMENT) {
+    } else if (vtype === VCOMMENT$1) {
         // init comment
         node = document.createComment('react-empty: ' + vnode.uid);
     }
@@ -750,25 +864,6 @@ function destroyVstateless(vstateless, node) {
     destroyVnode(vnode, node);
 }
 
-function renderVstateless(vstateless, context) {
-    var factory = vstateless.type;
-    var props = vstateless.props;
-
-    var vnode = factory(props, context);
-    if (vnode && vnode.render) {
-        vnode = vnode.render();
-    }
-    if (vnode === null || vnode === false) {
-        vnode = {
-            vtype: VCOMMENT,
-            uid: getUid()
-        };
-    } else if (!vnode || !vnode.vtype) {
-        throw new Error('@' + factory.name + '#render:You may have returned undefined, an array or some other invalid object');
-    }
-    return vnode;
-}
-
 var pendingHooks = [];
 var clearPendingMount = function clearPendingMount() {
     var len = pendingHooks.length;
@@ -809,6 +904,12 @@ function render(vnode, container, context, callback) {
 	if (!vnode.vtype) {
 		throw new Error('cannot render ' + vnode + ' to container');
 	}
+
+	addDirective('attr', DOMAttrDirective);
+	addDirective('prop', DOMPropDirective);
+	addDirective('on', eventDirective);
+	addDirective('css', styleDirective);
+
 	var id = container[COMPONENT_ID] || (container[COMPONENT_ID] = getUid());
 	var argsCache = pendingRendering[id];
 
@@ -878,103 +979,129 @@ function destroy(container) {
 	return false;
 }
 
-function createElement(type, props) /* ...children */{
-	var finalProps = {};
-	var key = null;
-	if (props != null) {
-		for (var propKey in props) {
-			if (propKey === 'key') {
-				if (props.key !== undefined) {
-					key = '' + props.key;
-				}
-			} else {
-				finalProps[propKey] = props[propKey];
-			}
-		}
-	}
-
-	var defaultProps = type.defaultProps;
-	if (defaultProps) {
-		for (var propKey in defaultProps) {
-			if (finalProps[propKey] === undefined) {
-				finalProps[propKey] = defaultProps[propKey];
-			}
-		}
-	}
-
-	var argsLen = arguments.length;
-	var finalChildren = [];
-
-	if (argsLen > 2) {
-		for (var i = 2; i < argsLen; i++) {
-			var child = arguments[i];
-			if (isArr(child)) {
-				flatEach(child, collectChild, finalChildren);
-			} else {
-				collectChild(child, finalChildren);
-			}
-		}
-	}
-
-	finalProps.children = finalChildren;
-
-	var vtype = null;
-	if (typeof type === 'string') {
-		vtype = VELEMENT;
-	} else if (typeof type === 'function') {
-		vtype = VSTATELESS;
-	} else {
-		throw new Error('unexpect type [ ' + type + ' ]');
-	}
-
-	var vnode = {
-		vtype: vtype,
-		type: type,
-		props: finalProps,
-		key: key
-	};
-	if (vtype === VSTATELESS) {
-		vnode.uid = getUid();
-	}
-
-	return vnode;
-}
-
-function isValidElement(obj) {
-	return obj != null && !!obj.vtype;
-}
-
-function createFactory(type) {
-	var factory = function factory() {
-		for (var _len = arguments.length, args = Array(_len), _key = 0; _key < _len; _key++) {
-			args[_key] = arguments[_key];
-		}
-
-		return createElement.apply(undefined, [type].concat(args));
-	};
-	factory.type = type;
-	return factory;
-}
-
-function collectChild(child, children) {
-	if (child != null && typeof child !== 'boolean') {
-		children[children.length] = child.vtype ? child : '' + child;
-	}
-}
-
-addDirective('attr', DOMAttrDirective);
-addDirective('prop', DOMPropDirective);
-addDirective('on', eventDirective);
-addDirective('css', styleDirective);
-
-var Vengine = {
-	createElement: createElement,
-	createFactory: createFactory,
-	isValidElement: isValidElement,
-	addDirective: addDirective,
-	removeDirective: removeDirective,
+var Client = {
 	render: render,
 	destroy: destroy
 };
 
-module.exports = Vengine;
+var DOMAttrStringify = {
+    attach: renderDOMAttr
+};
+
+var StyleStringify = {
+    attach: renderDOMStyle
+};
+
+function renderDOMAttr(elem, attrKey, attrValue) {
+    addItem(elem.attrs, attrKey + '="' + attrValue + '"');
+}
+
+function renderDOMStyle(elem, styleKey, styleValue) {
+    if (!isUnitlessNumber[styleName] && RE_NUMBER.test(styleValue)) {
+        styleValue += 'px';
+    } else if (styleValue == null || typeof styleValue === 'boolean') {
+        styleValue = '';
+    }
+    if (styleValue) {
+        addItem(elem.style, styleKey + ':' + styleValue + ';');
+    }
+}
+
+function renderToString(vnode, context) {
+    addDirective('attr', DOMAttrStringify);
+    addDirective('css', StyleStringify);
+    return renderVnodeToString(vnode, context);
+}
+
+function renderVnodeToString(vnode, context) {
+    var vtype = vnode.vtype;
+
+    var node = '';
+    if (!vtype) {
+        node = vnode;
+    } else if (vtype === VELEMENT) {
+        node = renderVelemToString(vnode, context);
+    } else if (vtype === VSTATELESS) {
+        node = renderVstatelessToString(vnode, context);
+    }
+    return node;
+}
+
+var selfClosingTags = {
+    area: 1,
+    base: 1,
+    br: 1,
+    col: 1,
+    command: 1,
+    embed: 1,
+    hr: 1,
+    img: 1,
+    input: 1,
+    keygen: 1,
+    link: 1,
+    meta: 1,
+    param: 1,
+    source: 1,
+    track: 1,
+    wbr: 1
+};
+
+function renderVelemToString(velem, context) {
+    var elem = {
+        tagName: velem.type,
+        children: velem.props.children,
+        attrs: [],
+        style: []
+    };
+    attachProps(elem, velem.props);
+    return renderElem(elem);
+}
+
+function renderElem(elem, context) {
+    var tagName = elem.tagName;
+    var attrs = elem.attrs;
+    var style = elem.style;
+    var children = elem.children;
+
+    var domAttrString = getDOMAttrString(elem);
+    var isSelfClosingTag = selfClosingTags[tagName];
+    return isSelfClosingTag ? '<' + tagName + domAttrString + ' />' : '<' + tagName + domAttrString + '>' + renderVchildrenToString(children, context) + '</' + tagName + '>';
+}
+
+function renderVchildrenToString(vchildren, context) {
+    var children = [];
+    for (var i = 0, len = vchildren.length; i < len; i++) {
+        addItem(children, renderVnodeToString(vchildren[i], context));
+    }
+    return children.join('');
+}
+
+function renderVstatelessToString(vstateless, context) {
+    var vnode = renderVstateless(vstateless, context);
+    var node = renderVnodeToString(vnode, context);
+    return node;
+}
+
+function getDOMAttrString(elem) {
+    var attrs = elem.attrs;
+    var style = elem.style;
+
+    if (style.length) {
+        addItem(attrs, 'style="' + style.join('') + '"');
+    }
+    if (attrs.length) {
+        return ' ' + attrs.join(' ');
+    }
+    return '';
+}
+
+var Server = {
+	renderToString: renderToString
+};
+
+var VdomEngine = {};
+extend(VdomEngine, Share);
+extend(VdomEngine, Client);
+extend(VdomEngine, Server);
+
+module.exports = VdomEngine;
